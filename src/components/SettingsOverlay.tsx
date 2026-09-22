@@ -10,7 +10,6 @@ import {
     Star, AlertCircle, Gift, Smartphone, Cpu, Shield, Code2, Headphones, Boxes, Save
 } from 'lucide-react';
 import { AutoAnswerIcon } from './AutoAnswerIcon';
-import { HiCreditCard } from 'react-icons/hi2';
 import { analytics } from '../lib/analytics/analytics.service';
 import { AboutSection } from './AboutSection';
 import { ErrorBoundary } from './ErrorBoundary';
@@ -2168,14 +2167,6 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({
                                         <Monitor size={16} /> {t('General')}
                                     </button>
                                     <button
-                                        onClick={() => setActiveTab('plans')}
-                                        className={navItemClass(activeTab === 'plans' || activeTab === 'natively-api' || activeTab === 'natively-pro')}
-                                    >
-                                        {(activeTab === 'plans' || activeTab === 'natively-api' || activeTab === 'natively-pro') && navActivePill}
-                                        <HiCreditCard size={16} />
-                                        <span>{t('Plans & Billing')}</span>
-                                    </button>
-                                    <button
                                         onClick={() => setActiveTab('ai-providers')}
                                         className={navItemClass(activeTab === 'ai-providers')}
                                     >
@@ -2276,7 +2267,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({
                             viewport changes height Chromium silently adjusts
                             scrollTop to compensate. Mid-animation it does that
                             repeatedly, producing micro-jumps that read as choppy
-                            and are independent of frame rate. Plans & Billing
+                            and are independent of frame rate. Settings content
                             animates whole regions in and out; this stops the
                             browser fighting it. */}
                         <div ref={panelScrollRef} className="flex-1 bg-bg-main overflow-y-auto p-8 relative" style={{ overflowAnchor: 'none' }}>
@@ -3300,9 +3291,9 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({
                                         <div className="rounded-2xl border border-border-subtle bg-bg-card/60 p-4 space-y-4">
                                             <div className="flex items-start justify-between gap-4">
                                                 <div>
-                                                    <h4 className="text-sm font-bold text-text-primary">{t('Shortcut prompts')}</h4>
+                                                    <h4 className="text-sm font-bold text-text-primary">{t('Prompt settings')}</h4>
                                                     <p className="text-xs text-text-secondary mt-1">
-                                                        {t('Add instructions to the actions above. They are appended to the built-in safety and context rules.')}
+                                                        {t('Edit the system prompt and the prompt sent by each action. Your text is added after Natively’s built-in safety and context rules.')}
                                                     </p>
                                                 </div>
                                                 <div className="flex items-center gap-2 shrink-0">
@@ -3326,7 +3317,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({
                                             </div>
 
                                             <div>
-                                                <label className="block text-xs font-medium text-text-secondary mb-1">{t('System prompt additions')}</label>
+                                                <label className="block text-xs font-medium text-text-primary mb-1">{t('System prompt')}</label>
                                                 <textarea
                                                     value={promptSettings.systemPrompt}
                                                     onChange={(event) => {
@@ -3334,7 +3325,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({
                                                         setPromptSaveState('idle');
                                                     }}
                                                     rows={4}
-                                                    placeholder={t('Optional instructions that should apply to every AI request…')}
+                                                    placeholder={t('Text added to every AI request…')}
                                                     className="w-full rounded-xl border border-border-subtle bg-bg-input px-3 py-2 text-xs text-text-primary placeholder:text-text-tertiary outline-none focus:border-accent-primary resize-y"
                                                 />
                                             </div>
@@ -3342,6 +3333,8 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({
                                             <div className="grid gap-3 md:grid-cols-2">
                                                 {[
                                                     ['whatToAnswer', 'What to Answer'],
+                                                    ['processScreenshots', 'Screenshot & Ask AI'],
+                                                    ['captureAndProcess', 'Capture & Ask AI'],
                                                     ['clarify', 'Clarify'],
                                                     ['followUp', 'Follow Up'],
                                                     ['recap', 'Recap'],

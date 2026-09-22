@@ -20,7 +20,8 @@ import { formatEnvelopeForPrompt } from './services/browser-context/formatEnvelo
 import { BrowserMetadataClassifierService } from './services/browser-context/BrowserMetadataClassifierService';
 import type { BrowserContextCategory, SafeWebsiteMetadata } from './services/browser-context/types';
 import { SettingsManager } from './services/SettingsManager';
-import { getUserPromptSettings, normalizePromptSettings } from './llm/userPromptSettings';
+import { appendShortcutPrompt, getUserPromptSettings, normalizePromptSettings } from './llm/userPromptSettings';
+import { SHORTCUT_PROMPT_KEYS, type ShortcutPromptKey } from '../src/types/promptSettings';
 import { RERANK_CANDIDATE_POOL, resolveRerankPoolSize } from './services/modes/rerankPool';
 import { buildRerankProbe } from './services/reranking/rerankProbe';
 import { ProviderStatusRegistry } from './services/ProviderStatusRegistry';
@@ -166,6 +167,7 @@ interface DirectAssistRendererRequest {
   requestId: string;
   source: DirectAssistSource;
   currentRequest: string;
+  shortcutPromptKey?: ShortcutPromptKey;
   skillId?: string;
   manualContext?: string;
   referenceContext?: string;
@@ -1298,7 +1300,7 @@ export function initializeIpcHandlers(appState: AppState): void {
       message: string,
       imagePaths?: string[],
       context?: string,
-      options?: { skipSystemPrompt?: boolean; ignoreKnowledgeMode?: boolean },
+      options?: { skipSystemPrompt?: boolean; ignoreKnowledgeMode?: boolean; shortcutPromptKey?: string },
     ): Promise<null> => {
       let myController: AbortController | null = null;
       let _manualFgToken: string | null = null;
@@ -1309,6 +1311,17 @@ export function initializeIpcHandlers(appState: AppState): void {
       const { ForegroundGate } = require('./services/ForegroundGate') as typeof import('./services/ForegroundGate');
       try {
         const llmHelper = appState.processingHelper.getLLMHelper();
+
+        // Keep action-specific prompt settings on the main-process side. The
+        // renderer selects the action; the saved prompt text is resolved here
+        // and appended to the caller-owned prompt before provider routing.
+        if (
+          context
+          && typeof options?.shortcutPromptKey === 'string'
+          && SHORTCUT_PROMPT_KEYS.includes(options.shortcutPromptKey as ShortcutPromptKey)
+        ) {
+          context = appendShortcutPrompt(context, options.shortcutPromptKey as ShortcutPromptKey);
+        }
 
         const senderId = event.sender.id;
         const myStreamId = ++_chatStreamId;
@@ -6732,6 +6745,17 @@ export function initializeIpcHandlers(appState: AppState): void {
       };
     }
 
+    let shortcutPromptKey: ShortcutPromptKey | undefined;
+    if (candidate.shortcutPromptKey !== undefined) {
+      if (
+        typeof candidate.shortcutPromptKey !== 'string'
+        || !SHORTCUT_PROMPT_KEYS.includes(candidate.shortcutPromptKey as ShortcutPromptKey)
+      ) {
+        return { requestId, error: directAssistError('INVALID_REQUEST', 'Direct Assist prompt key is invalid.') };
+      }
+      shortcutPromptKey = candidate.shortcutPromptKey as ShortcutPromptKey;
+    }
+
     const optionalTextFields = [
       'skillId',
       'manualContext',
@@ -6978,6 +7002,7 @@ export function initializeIpcHandlers(appState: AppState): void {
       requestId,
       source: candidate.source as DirectAssistSource,
       currentRequest: candidate.currentRequest,
+      shortcutPromptKey,
       skillId: candidate.skillId as string | undefined,
       manualContext: candidate.manualContext as string | undefined,
       referenceContext: candidate.referenceContext as string | undefined,
@@ -7209,12 +7234,19 @@ export function initializeIpcHandlers(appState: AppState): void {
       console.warn('[direct-assist] live session transcript unavailable, proceeding without it:', (error as Error)?.message);
     }
 
+    const userPromptSettings = getUserPromptSettings();
+    const shortcutPrompt = request.shortcutPromptKey
+      ? userPromptSettings.shortcutPrompts[request.shortcutPromptKey]
+      : undefined;
+
     const directRequest: DirectAssistRequestInput = Object.freeze({
       requestId: request.requestId,
       source: request.source,
       selection,
       currentRequest: resolvedSkill.currentRequest,
       skill: resolvedSkill.skill ?? null,
+      userSystemPrompt: userPromptSettings.systemPrompt,
+      ...(shortcutPrompt ? { shortcutPrompt } : {}),
       manualContext: request.manualContext,
       referenceFiles,
       pageContext: request.pageContext,
@@ -13883,7 +13915,7 @@ export function initializeIpcHandlers(appState: AppState): void {
       _,
       question?: string,
       imagePaths?: string[],
-      options?: { promptInstruction?: string; domContext?: string; domContextEnvelope?: unknown },
+      options?: { promptInstruction?: string; shortcutPromptKey?: string; domContext?: string; domContextEnvelope?: unknown },
     ) => {
       return _tracked(async () => {
       // Auto Answer V3: a manual What-to-Answer (hotkey, button, or an accepted
@@ -14065,6 +14097,11 @@ export function initializeIpcHandlers(appState: AppState): void {
             promptInstruction:
               typeof options?.promptInstruction === 'string'
                 ? options.promptInstruction
+                : undefined,
+            shortcutPromptKey:
+              typeof options?.shortcutPromptKey === 'string'
+                && SHORTCUT_PROMPT_KEYS.includes(options.shortcutPromptKey as ShortcutPromptKey)
+                ? options.shortcutPromptKey as ShortcutPromptKey
                 : undefined,
             domContext: effectiveDomContext,
           },

@@ -28,6 +28,7 @@ import { categorizeSttError } from '../lib/sttErrorMapper';
 import { splitGistLine, splitGistLineStreaming, collapseBlockGaps } from '../lib/displayMarkup';
 
 import type { SkillSummary } from '../types/electron';
+import type { ShortcutPromptKey } from '../types/promptSettings';
 
 function SkillPicker({
   skills,
@@ -6407,6 +6408,7 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({
   const beginDirectAssist = useCallback(async ({
     source,
     currentRequest,
+    shortcutPromptKey,
     imagePaths,
     pageContext: directPageContext,
     transcript,
@@ -6414,6 +6416,7 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({
   }: {
     source: DirectAssistSource;
     currentRequest: string;
+    shortcutPromptKey?: ShortcutPromptKey;
     imagePaths?: string[];
     pageContext?: { dom?: string; ocr?: string; url?: string; title?: string };
     transcript?: string;
@@ -6479,6 +6482,7 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({
         // $skill prefix. Main resolves `skillId`; it does not need renderer-side
         // prompt rewriting or instruction injection.
         currentRequest,
+        ...(shortcutPromptKey ? { shortcutPromptKey } : {}),
         skillId: directAssistSkillId(currentRequest),
         history: directAssistHistoryRef.current.slice(-24),
         ...(directPageContext ? { pageContext: directPageContext } : {}),
@@ -7234,7 +7238,10 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({
     'follow_up:rephrase': 'Rephrase',
   };
 
-  const handleWhatToSay = async (promptInstruction?: string | React.MouseEvent) => {
+  const handleWhatToSay = async (
+    promptInstruction?: string | React.MouseEvent,
+    shortcutPromptKey: ShortcutPromptKey = 'whatToAnswer',
+  ) => {
     if (!tryBeginOverlayAction('what_to_say')) {
       // The press was blocked because a prior 'what_to_say' is still streaming.
       // Surface a brief hint instead of silently doing nothing, so a blocked
@@ -7337,6 +7344,7 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({
         await beginDirectAssist({
           source: directWhatToSayPayload.source,
           currentRequest: directWhatToSayPayload.currentRequest,
+          shortcutPromptKey,
           imagePaths: currentAttachments.map((attachment) => attachment.path),
           pageContext: directPageContext,
           // When a screenshot is the request surface, retain STT provenance as a
@@ -7437,10 +7445,11 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({
         dynamicPromptInstruction || domContext
           ? {
               ...(dynamicPromptInstruction ? { promptInstruction: dynamicPromptInstruction } : {}),
+              shortcutPromptKey,
               ...(domContext ? { domContext } : {}),
               ...(domContextEnvelope ? { domContextEnvelope } : {}),
             }
-          : undefined;
+          : { shortcutPromptKey };
 
       // Pass imagePath if attached
       const result = await window.electronAPI.generateWhatToSay(
@@ -8322,6 +8331,7 @@ const NativelyInterface: React.FC<NativelyInterfaceProps> = ({
             currentRequest: question || 'Analyze the attached screenshot.',
             imagePaths: currentAttachments.map((attachment) => attachment.path),
             pageContext: directPageContext,
+            shortcutPromptKey: 'answer',
             userMessageId,
           });
           return;
@@ -8395,7 +8405,7 @@ Provide only the answer, nothing else.`;
             question,
             currentAttachments.length > 0 ? currentAttachments.map((s) => s.path) : undefined,
             prompt,
-            { skipSystemPrompt: true },
+            { skipSystemPrompt: true, shortcutPromptKey: 'answer' },
           );
         } catch (err) {
           // R-17: a throw from invoke() never reaches the main process, so no
@@ -9385,7 +9395,7 @@ Provide only the answer, nothing else.`;
 
   const generalHandlersRef = useRef({
     toggleVisibility: () => window.electronAPI.toggleWindow(),
-    processScreenshots: handleWhatToSay,
+    processScreenshots: () => handleWhatToSay(undefined, 'processScreenshots'),
     resetCancel: async () => {
       if (isProcessing) {
         cancelActiveChatStream();
@@ -9426,7 +9436,7 @@ Provide only the answer, nothing else.`;
   // Update ref
   generalHandlersRef.current = {
     toggleVisibility: () => window.electronAPI.toggleWindow(),
-    processScreenshots: handleWhatToSay,
+    processScreenshots: () => handleWhatToSay(undefined, 'processScreenshots'),
     resetCancel: async () => {
       if (isProcessing) {
         cancelActiveChatStream();
@@ -9531,7 +9541,7 @@ Provide only the answer, nothing else.`;
       // whether the state update has flushed yet.
       requestAnimationFrame(() => {
         try {
-          handlersRef.current.handleWhatToSay();
+          handlersRef.current.handleWhatToSay(undefined, 'captureAndProcess');
         } finally {
           pendingCaptureRef.current = null;
         }

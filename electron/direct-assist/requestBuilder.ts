@@ -512,6 +512,12 @@ export function buildDirectAssistRequest(input: DirectAssistRequestInput): Direc
     requestedLanguage,
     requestedFormat,
     maxContextChars,
+    ...(typeof input.userSystemPrompt === 'string' && input.userSystemPrompt.trim()
+      ? { userSystemPrompt: input.userSystemPrompt.trim() }
+      : {}),
+    ...(typeof input.shortcutPrompt === 'string' && input.shortcutPrompt.trim()
+      ? { shortcutPrompt: input.shortcutPrompt.trim() }
+      : {}),
   });
 }
 
@@ -926,9 +932,19 @@ export function prepareDirectAssistPrompt(input: DirectAssistRequestInput | Dire
     );
   }
 
+  const systemPromptLayers = [
+    DIRECT_ASSIST_SYSTEM_PROMPT,
+    request.userSystemPrompt
+      ? `<user_system_prompt>\n${request.userSystemPrompt}\n</user_system_prompt>`
+      : '',
+    request.shortcutPrompt
+      ? `<shortcut_prompt>\n${request.shortcutPrompt}\n</shortcut_prompt>`
+      : '',
+  ].filter(Boolean).join('\n\n');
+
   return Object.freeze({
     request,
-    systemPrompt: DIRECT_ASSIST_SYSTEM_PROMPT,
+    systemPrompt: systemPromptLayers,
     userPrompt,
     imagePaths: request.imagePaths,
     // Off the SURVIVING history, not request.history: the loop above may have

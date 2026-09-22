@@ -26,6 +26,7 @@ import type { ModeRetrievalOptions } from "../services/ModeContextRetriever";
 import { isCodeVerificationEnabled } from "./codeVerification/verificationEnabled";
 import type { WhatToAnswerRequestSnapshot } from "./whatToAnswerRequestSnapshot";
 import { appendShortcutPrompt } from './userPromptSettings';
+import type { ShortcutPromptKey } from '../../src/types/promptSettings';
 
 // Wall-clock budget for the pre-stream mode-context HYBRID retrieval await.
 // The hybrid retriever embeds the live query, and the embedder's own hard
@@ -207,6 +208,7 @@ export class WhatToAnswerLLM {
         // Owned by the caller rather than stored on the instance because
         // WhatToAnswerLLM is a long-lived singleton and turns can overlap.
         truncationSink?: { truncated: boolean },
+        shortcutPromptKey?: ShortcutPromptKey,
     ): AsyncGenerator<string> {
         const MEASURE = process.env.MEASURE_LATENCY === 'true';
         let tStart = 0, tIntent = 0, tTemporal = 0, tMode = 0, tTrunc = 0, tPrompt = 0, tStreamStart = 0;
@@ -800,7 +802,7 @@ The user triggered this action with a coding problem on screen and NO new questi
                 ? `${basePrompt}\n\n## ACTIVE SKILL\n${activeSkill.promptBlock}`
                 : (modePromptSuffix && !v2BasePrompt)
                     ? `${basePrompt}\n\n## ACTIVE MODE\n${modePromptSuffix}`
-                    : basePrompt, 'whatToAnswer');
+                : basePrompt, shortcutPromptKey ?? 'whatToAnswer');
 
             const assembler = new PromptAssembler();
             // ── CONTEXT OS H1: typed EvidencePack GOVERNS the WTA factual prompt ──

@@ -57,3 +57,25 @@ test('preload and renderer type expose promptInstruction option on generateWhatT
   assert.match(preload, /ipcRenderer\.invoke\(['"]generate-what-to-say['"], question, imagePaths, options\)/);
   assert.match(types, /generateWhatToSay:[\s\S]{0,200}options\?: \{[^}]*promptInstruction\?: string[^}]*domContext\?: string[^}]*\}/);
 });
+
+test('action prompt settings cover Answer and both screenshot submission paths', () => {
+  const settings = read('src/components/SettingsOverlay.tsx');
+  const renderer = read('src/components/NativelyInterface.tsx');
+  const ipc = read('electron/ipcHandlers.ts');
+  const promptSettings = read('src/types/promptSettings.ts');
+  const directAssistBuilder = read('electron/direct-assist/requestBuilder.ts');
+
+  assert.match(promptSettings, /'processScreenshots'/);
+  assert.match(promptSettings, /'captureAndProcess'/);
+  assert.match(promptSettings, /'answer'/);
+  assert.match(settings, /\['processScreenshots', 'Screenshot & Ask AI'\]/);
+  assert.match(settings, /\['captureAndProcess', 'Capture & Ask AI'\]/);
+  assert.match(settings, /\['answer', 'Answer \/ Record'\]/);
+  assert.match(renderer, /handleWhatToSay\(undefined, 'processScreenshots'\)/);
+  assert.match(renderer, /handleWhatToSay\(undefined, 'captureAndProcess'\)/);
+  assert.match(renderer, /shortcutPromptKey: 'answer'/);
+  assert.match(renderer, /shortcutPromptKey: 'answer' \}/);
+  assert.match(ipc, /appendShortcutPrompt\(context, options\.shortcutPromptKey as ShortcutPromptKey\)/);
+  assert.match(directAssistBuilder, /<user_system_prompt>/);
+  assert.match(directAssistBuilder, /<shortcut_prompt>/);
+});

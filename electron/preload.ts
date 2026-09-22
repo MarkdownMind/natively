@@ -21,6 +21,7 @@ interface DirectAssistRequest {
   requestId: string;
   source: DirectAssistSource;
   currentRequest: string;
+  shortcutPromptKey?: string;
   skillId?: string;
   manualContext?: string;
   referenceContext?: string;
@@ -458,7 +459,7 @@ interface ElectronAPI {
   generateWhatToSay: (
     question?: string,
     imagePaths?: string[],
-    options?: { promptInstruction?: string; domContext?: string; domContextEnvelope?: unknown },
+    options?: { promptInstruction?: string; shortcutPromptKey?: string; domContext?: string; domContextEnvelope?: unknown },
   ) => Promise<{
     answer: string | null;
     question?: string;
@@ -773,7 +774,7 @@ interface ElectronAPI {
     message: string,
     imagePaths?: string[],
     context?: string,
-    options?: { skipSystemPrompt?: boolean; ignoreKnowledgeMode?: boolean },
+    options?: { skipSystemPrompt?: boolean; ignoreKnowledgeMode?: boolean; shortcutPromptKey?: string },
   ) => Promise<void>;
   onGeminiStreamToken: (callback: (token: string, meta?: { streamId?: number }) => void) => () => void;
   onGeminiStreamDone: (callback: (data?: { finalText?: string; streamId?: number }) => void) => () => void;
@@ -1948,7 +1949,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   generateWhatToSay: (
     question?: string,
     imagePaths?: string[],
-    options?: { promptInstruction?: string; domContext?: string; domContextEnvelope?: unknown },
+    options?: { promptInstruction?: string; shortcutPromptKey?: string; domContext?: string; domContextEnvelope?: unknown },
   ) => ipcRenderer.invoke('generate-what-to-say', question, imagePaths, options),
   startDirectAssist: (request: DirectAssistRequest) =>
     ipcRenderer.invoke('direct-assist-stream', request),
@@ -2313,7 +2314,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
     message: string,
     imagePaths?: string[],
     context?: string,
-    options?: { skipSystemPrompt?: boolean; ignoreKnowledgeMode?: boolean },
+    options?: { skipSystemPrompt?: boolean; ignoreKnowledgeMode?: boolean; shortcutPromptKey?: string },
   ) => ipcRenderer.invoke('gemini-chat-stream', message, imagePaths, context, options),
 
   onGeminiStreamToken: (callback: (token: string, meta?: { streamId?: number }) => void) => {

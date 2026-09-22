@@ -150,6 +150,10 @@ export interface DirectAssistRequestInput {
   readonly requestedFormat?: string;
   /** Test/operator bound. Current request and skill are never truncated. */
   readonly maxContextChars?: number;
+  /** Main-process-resolved user prompt layers. Renderer callers only select
+   * the shortcut key; the text itself never comes from the renderer. */
+  readonly userSystemPrompt?: string;
+  readonly shortcutPrompt?: string;
 }
 
 /** Deep-frozen, normalized request used for one provider dispatch. */
@@ -170,6 +174,8 @@ export interface DirectAssistRequest {
   readonly requestedLanguage: string | null;
   readonly requestedFormat: string | null;
   readonly maxContextChars: number;
+  readonly userSystemPrompt?: string;
+  readonly shortcutPrompt?: string;
 }
 
 export interface DirectAssistPreparedPrompt {

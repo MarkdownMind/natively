@@ -1,5 +1,7 @@
 export const SHORTCUT_PROMPT_KEYS = [
   'whatToAnswer',
+  'processScreenshots',
+  'captureAndProcess',
   'clarify',
   'followUp',
   'followUpQuestions',
