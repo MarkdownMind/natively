@@ -82,8 +82,14 @@ export type DirectAssistEvent =
 
 export interface ElectronAPI {
   getPromptSettings: () => Promise<{
-    systemPrompt: string
-    shortcutPrompts: Record<string, string>
+    settings: {
+      systemPrompt: string
+      shortcutPrompts: Record<string, string>
+    }
+    defaults: {
+      systemPrompt: string
+      shortcutPrompts: Record<string, string>
+    }
   }>
   setPromptSettings: (settings: {
     systemPrompt: string

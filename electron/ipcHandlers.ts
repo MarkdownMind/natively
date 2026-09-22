@@ -49,6 +49,40 @@ import { planAnswer, formatAnswerPlanForPrompt, isCodingAnswerType, validateAnsw
 type StreamChatArgs = Parameters<import('./LLMHelper').LLMHelper['streamChat']>;
 
 /**
+ * Load the editor defaults only when Settings opens. Keeping these requires
+ * dynamic prevents the very large prompt catalog from becoming a static
+ * dependency of every prompt override module during the transpile build.
+ */
+function getPromptSettingsForEditor() {
+  const promptCatalog = require('./llm/prompts') as Record<string, string>;
+  const { DIRECT_ASSIST_SYSTEM_PROMPT } = require('./direct-assist/requestBuilder') as {
+    DIRECT_ASSIST_SYSTEM_PROMPT: string;
+  };
+
+  return {
+    settings: getUserPromptSettings(),
+    defaults: {
+      systemPrompt: promptCatalog.HARD_SYSTEM_PROMPT,
+      shortcutPrompts: {
+        whatToAnswer: promptCatalog.UNIVERSAL_WHAT_TO_ANSWER_PROMPT,
+        // Both screenshot shortcuts enter Direct Assist first. The legacy
+        // fallback can use its own action prompt, but this is the prompt sent
+        // by the normal screenshot submission path.
+        processScreenshots: DIRECT_ASSIST_SYSTEM_PROMPT,
+        captureAndProcess: DIRECT_ASSIST_SYSTEM_PROMPT,
+        clarify: promptCatalog.CLARIFY_MODE_PROMPT,
+        followUp: promptCatalog.UNIVERSAL_FOLLOWUP_PROMPT,
+        followUpQuestions: promptCatalog.UNIVERSAL_FOLLOW_UP_QUESTIONS_PROMPT,
+        recap: promptCatalog.UNIVERSAL_RECAP_PROMPT,
+        answer: promptCatalog.UNIVERSAL_ANSWER_PROMPT,
+        codeHint: promptCatalog.CODE_HINT_PROMPT,
+        brainstorm: promptCatalog.BRAINSTORM_MODE_PROMPT,
+      },
+    },
+  };
+}
+
+/**
  * Arguments for a post-answer repair stream on the manual-chat surface.
  *
  * Replays this turn's answer call so the repair sees the same images, context,
@@ -6543,8 +6577,10 @@ export function initializeIpcHandlers(appState: AppState): void {
   });
 
   // Prompt controls are complete user-owned prompt replacements. The renderer
-  // never receives provider credentials or the internal compiled prompts.
-  safeHandle('prompts:get-settings', async () => getUserPromptSettings());
+  // receives the built-in prompt defaults intentionally so the editor can show
+  // the full text that is active when no replacement is saved. It never
+  // receives provider credentials.
+  safeHandle('prompts:get-settings', async () => getPromptSettingsForEditor());
 
   safeHandle('prompts:set-settings', async (_, settings: unknown) => {
     const normalized = normalizePromptSettings(settings);

@@ -652,6 +652,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({
 
     const { shortcuts, updateShortcut, resetShortcuts, conflicts } = useShortcuts();
     const [promptSettings, setPromptSettings] = useState<PromptSettings>(DEFAULT_PROMPT_SETTINGS);
+    const [promptDefaults, setPromptDefaults] = useState<PromptSettings>(DEFAULT_PROMPT_SETTINGS);
     const [promptSaveState, setPromptSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
     // Small badge shown next to a shortcut row when globalShortcut.register()
     // failed for it (another app/OS already owns that key combo). The
@@ -723,9 +724,15 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({
             window.electronAPI?.getCodeVerification?.().then((v) => setCodeVerification(v === true)).catch(() => { });
             window.electronAPI?.getMeetingRetention?.().then(setMeetingRetention).catch(() => { });
             window.electronAPI?.getPromptSettings?.().then((settings) => {
+                const defaults = settings?.defaults || DEFAULT_PROMPT_SETTINGS;
+                const saved = settings?.settings || DEFAULT_PROMPT_SETTINGS;
+                setPromptDefaults(defaults);
                 setPromptSettings({
-                    systemPrompt: settings?.systemPrompt || '',
-                    shortcutPrompts: settings?.shortcutPrompts || {},
+                    systemPrompt: saved.systemPrompt || defaults.systemPrompt || '',
+                    shortcutPrompts: {
+                        ...(defaults.shortcutPrompts || {}),
+                        ...(saved.shortcutPrompts || {}),
+                    },
                 });
             }).catch(() => { });
         }
@@ -742,7 +749,21 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({
     const savePromptSettings = async () => {
         setPromptSaveState('saving');
         try {
-            const result = await window.electronAPI?.setPromptSettings?.(promptSettings);
+            // The editor displays defaults as a convenience, but persist only
+            // actual replacements. This keeps an unchanged editor from
+            // freezing future built-in prompt updates into user settings.
+            const defaultSystemPrompt = promptDefaults.systemPrompt.trim();
+            const systemPrompt = promptSettings.systemPrompt.trim() === defaultSystemPrompt
+                ? ''
+                : promptSettings.systemPrompt;
+            const shortcutPrompts = Object.fromEntries(
+                Object.entries(promptSettings.shortcutPrompts).filter(([key, value]) => {
+                    if (typeof value !== 'string' || !value.trim()) return false;
+                    const defaultPrompt = promptDefaults.shortcutPrompts[key as ShortcutPromptKey] || '';
+                    return value.trim() !== defaultPrompt.trim();
+                }),
+            );
+            const result = await window.electronAPI?.setPromptSettings?.({ systemPrompt, shortcutPrompts });
             setPromptSaveState(result?.success ? 'saved' : 'error');
         } catch {
             setPromptSaveState('error');
@@ -754,7 +775,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({
         try {
             const result = await window.electronAPI?.resetPromptSettings?.();
             if (result?.success) {
-                setPromptSettings(DEFAULT_PROMPT_SETTINGS);
+                setPromptSettings(promptDefaults);
                 setPromptSaveState('saved');
             } else {
                 setPromptSaveState('error');
@@ -3293,7 +3314,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({
                                                 <div>
                                                     <h4 className="text-sm font-bold text-text-primary">{t('Prompt settings')}</h4>
                                                     <p className="text-xs text-text-secondary mt-1">
-                                                        {t('Edit the complete system prompt and complete prompt for each action. A saved prompt replaces Natively’s built-in prompt; it is not appended.')}
+                                                        {t('The complete built-in prompts are loaded below. Edit any field to replace it entirely, or clear it to restore the default.')}
                                                     </p>
                                                 </div>
                                                 <div className="flex items-center gap-2 shrink-0">

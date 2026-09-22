@@ -6,7 +6,10 @@ import {
   type ShortcutPromptKey,
 } from '../../src/types/promptSettings';
 
-const MAX_PROMPT_CHARS = 8_000;
+// Built-in prompts are intentionally long. The editor must be able to show
+// and save the complete prompt instead of silently truncating it into a
+// partial replacement.
+const MAX_PROMPT_CHARS = 100_000;
 
 function clampPrompt(value: unknown): string {
   return typeof value === 'string' ? value.trim().slice(0, MAX_PROMPT_CHARS) : '';
