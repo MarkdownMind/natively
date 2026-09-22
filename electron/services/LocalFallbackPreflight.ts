@@ -325,13 +325,16 @@ export async function runLocalFallbackPreflight(options: { ollamaSelected?: bool
     // user "Please reinstall Natively" on a perfectly good install. (Dev mode
     // short-circuits checkUnpacked*, which is why it never showed up locally.)
     //
-    // The darwin branch is byte-for-byte what shipped before; only the win32
-    // branch is new. Linux gets neither (as before) rather than a guess.
+    // The darwin branch remains platform-scoped; the win32 branch is new. On
+    // macOS, electron-builder prunes the opposite CPU
+    // architecture from each package, so the preflight must check only the
+    // architecture this process is actually running (the release verifier
+    // follows the same rule). Linux gets neither (as before) rather than a
+    // guess.
     if (process.platform === 'darwin') {
-      checks.push(await timedCheck('sharp darwin-arm64 native', async () => checkUnpackedNativeDir('node_modules/@img/sharp-darwin-arm64/lib')));
-      checks.push(await timedCheck('sharp darwin-x64 native', async () => checkUnpackedNativeDir('node_modules/@img/sharp-darwin-x64/lib')));
-      checks.push(await timedCheck('sqlite-vec darwin-arm64 dylib', async () => checkUnpackedNativeDir('node_modules/sqlite-vec-darwin-arm64/vec0.dylib')));
-      checks.push(await timedCheck('sqlite-vec darwin-x64 dylib', async () => checkUnpackedNativeDir('node_modules/sqlite-vec-darwin-x64/vec0.dylib')));
+      const macArch = process.arch === 'x64' ? 'x64' : 'arm64';
+      checks.push(await timedCheck(`sharp darwin-${macArch} native`, async () => checkUnpackedNativeDir(`node_modules/@img/sharp-darwin-${macArch}/lib`)));
+      checks.push(await timedCheck(`sqlite-vec darwin-${macArch} dylib`, async () => checkUnpackedNativeDir(`node_modules/sqlite-vec-darwin-${macArch}/vec0.dylib`)));
     } else if (process.platform === 'win32') {
       // Prefix-matched: Windows ships x64 AND ia32 installers (and arm64 is
       // possible), so the arch suffix cannot be hardcoded. Both directories are

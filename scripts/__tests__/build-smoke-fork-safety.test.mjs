@@ -33,26 +33,15 @@ test('trusted runs cannot silently downgrade when the premium credential is miss
   assert.match(workflow, /Run intelligence unit tests\s+if: \$\{\{ !cancelled\(\) && steps\.smoke_scope\.outputs\.mode == 'full' \}\}/);
 });
 
-test('core smoke externalizes private runtime imports only behind an explicit opt-in', () => {
+test('fork-safe core smoke uses the same transpile-only Electron build', () => {
   assert.equal(packageJson.scripts['build:electron'], 'node scripts/build-electron.js');
-  assert.match(packageJson.scripts['build:electron:core-smoke'], /NATIVELY_CORE_SMOKE=1/);
-  // ANCHORED (^…;$ with /m), deliberately. The unanchored form of this
-  // assertion was a substring search, so it kept passing when PR #533 changed
-  // the line to `… === '1' || !premiumPresent;` — a test literally named "only
-  // behind an explicit opt-in" went green while the opt-in became implicit.
-  // The `$` after the semicolon is the whole guard: it rejects ANY additional
-  // disjunct. The doesNotMatch below is redundant with it, but it fails with a
-  // message that names the actual mistake instead of "no match found".
-  assert.match(buildScript, /^const CORE_SMOKE = process\.env\.NATIVELY_CORE_SMOKE === '1';$/m);
+  assert.equal(packageJson.scripts['build:electron:core-smoke'], 'node scripts/build-electron.js');
   assert.doesNotMatch(
     buildScript,
-    /^const CORE_SMOKE =.*\|\|/m,
-    'CORE_SMOKE must stay an explicit opt-in: no extra `||` condition may enable it. ' +
-      'Auto-enabling it (e.g. on a missing premium/ submodule) turns a hard build ' +
-      'failure into a silent success that ships an app with Pro features dead.'
+    /CORE_SMOKE|coreSmokePremiumExternalPlugin/,
+    'the transpile-only build no longer needs a dead premium externalization flag; ' +
+      'the optional premium source tree is discovered only when it is checked out.',
   );
-  assert.match(buildScript, /plugins: CORE_SMOKE \? \[coreSmokePremiumExternalPlugin\] : \[\]/);
-  assert.match(buildScript, /filter: \/\^\(\?:\\\.\\\.\\\/\)\+premium/);
 });
 
 test('core type contracts do not import the private repository', () => {
@@ -66,4 +55,20 @@ test('core type contracts do not import the private repository', () => {
   assert.match(resolver, /from '\.\.\/premium\/contracts'/);
   assert.match(contracts, /export interface PromptAssemblyResult/);
   assert.match(contracts, /export interface SearchProvider/);
+});
+
+test('the sandboxed Electron preload is bundled as a self-contained entrypoint', () => {
+  assert.match(buildScript, /const PRELOAD_ENTRY = 'electron\/preload\.ts';/);
+  assert.match(
+    buildScript,
+    /const regularEntryPoints = entryPoints\.filter\(\(entry\) => entry !== PRELOAD_ENTRY\);/,
+  );
+  assert.match(
+    buildScript,
+    /entryPoints: \[PRELOAD_ENTRY\],[\s\S]*?bundle: true,[\s\S]*?external: \['electron'\]/,
+  );
+  assert.match(
+    buildScript,
+    /console\.log\('\[build-electron\] bundled sandbox preload'\);/,
+  );
 });

@@ -34,19 +34,22 @@ test('preflight: the darwin-only native asset checks are gated to darwin', () =>
   assert.ok(block.length > 0, 'platform-scoped native-asset block not found');
   assert.match(
     block,
-    /if \(process\.platform === 'darwin'\) \{[\s\S]*?sharp darwin-arm64 native/,
+    /if \(process\.platform === 'darwin'\) \{[\s\S]*?sharp darwin-\$\{macArch\} native/,
     'BUG: the darwin sharp/sqlite-vec checks must sit behind a darwin gate — running them on ' +
       'Windows fails four checks for binaries that are never installed there.',
   );
-  // Every darwin check must still be present and unchanged (no macOS regression).
-  for (const id of [
-    'sharp darwin-arm64 native',
-    'sharp darwin-x64 native',
-    'sqlite-vec darwin-arm64 dylib',
-    'sqlite-vec darwin-x64 dylib',
-  ]) {
-    assert.ok(block.includes(id), `BUG: macOS regression — the "${id}" check disappeared.`);
-  }
+  assert.match(
+    block,
+    /const macArch = process\.arch === 'x64' \? 'x64' : 'arm64';/,
+    'BUG: macOS packaged preflight must select the current process architecture.',
+  );
+  assert.match(block, /sharp darwin-\$\{macArch\} native/);
+  assert.match(block, /sqlite-vec darwin-\$\{macArch\} dylib/);
+  assert.doesNotMatch(
+    block,
+    /sharp darwin-arm64 native[\s\S]*sharp darwin-x64 native|sqlite-vec darwin-arm64 dylib[\s\S]*sqlite-vec darwin-x64 dylib/,
+    'BUG: a target-arch package must not require the opposite macOS architecture.',
+  );
 });
 
 test('preflight: Windows has its own sharp / sqlite-vec checks, arch-agnostic', () => {

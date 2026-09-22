@@ -332,6 +332,20 @@ exports.default = async function (context) {
             }
         }
     }
+
+    // Re-signing a nested .node changes the hash recorded in the outer app's
+    // resource seal. Refresh the top-level signature after the entitlement
+    // pass, otherwise `codesign --verify --deep --strict` reports the app as
+    // modified and Gatekeeper can send users back through the permission/Open
+    // prompt without ever presenting the window.
+    console.log('[Ad-Hoc Signing] Refreshing the top-level app seal...');
+    try {
+        execSync(`codesign --force ${hardenedOpt}--entitlements "${entitlementsPath}" --sign - "${appPath}"`, { stdio: 'inherit' });
+        console.log('[Ad-Hoc Signing] Top-level app seal refreshed.');
+    } catch (error) {
+        console.error('[Ad-Hoc Signing] Failed to refresh the top-level app seal:', error);
+        throw error;
+    }
 };
 
 // Exported for scripts/__tests__ — electron-builder only ever calls the default

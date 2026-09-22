@@ -25,12 +25,6 @@ const SOURCE_MAPS = process.env.NATIVELY_ELECTRON_SOURCEMAP === '1';
 // each emitted file is small. Serial batches keep peak build memory bounded;
 // bundle:false still preserves the same directory-shaped output.
 const BUILD_BATCH_SIZE = Math.max(1, Number(process.env.NATIVELY_ELECTRON_BUILD_BATCH_SIZE) || 32);
-// Fork pull requests cannot receive the repository secret needed to fetch the
-// private premium submodule. This opt-in mode still transpiles every core
-// Electron entrypoint, but leaves private runtime imports unresolved for the
-// packaged premium build to supply. Normal development and release builds are
-// unchanged.
-const CORE_SMOKE = process.env.NATIVELY_CORE_SMOKE === '1';
 const path = require('path');
 const fs = require('fs');
 
@@ -80,6 +74,15 @@ const RUNTIME_SOURCE_ENTRIES = [
   'src/lib/micPermissionPolicy.mjs',
 ].filter(relativePath => fs.existsSync(path.resolve(rootDir, relativePath)));
 entryPoints.push(...RUNTIME_SOURCE_ENTRIES);
+
+// Electron sandboxed preloads are not normal Node entrypoints. Chromium only
+// exposes a small allow-list of builtins to them, so an unbundled preload that
+// contains `require('./services/...')` fails at runtime even when the sibling
+// file is present in dist-electron/app.asar. Keep the preload as one small,
+// self-contained bundle; the rest of the Electron tree intentionally remains
+// directory-shaped and unbundled.
+const PRELOAD_ENTRY = 'electron/preload.ts';
+const regularEntryPoints = entryPoints.filter((entry) => entry !== PRELOAD_ENTRY);
 
 const start = Date.now();
 
@@ -196,8 +199,16 @@ const copyAssets = () => {
 };
 
 if (WATCH) {
-  context(buildOptions).then(async (ctx) => {
-    await ctx.watch();
+  Promise.all([
+    context({ ...buildOptions, entryPoints: regularEntryPoints }),
+    context({
+      ...buildOptions,
+      entryPoints: [PRELOAD_ENTRY],
+      bundle: true,
+      external: ['electron'],
+    }),
+  ]).then(async ([regularCtx, preloadCtx]) => {
+    await Promise.all([regularCtx.watch(), preloadCtx.watch()]);
     copyAssets();
     // Deliberately no timing here: ctx.watch() returns once the watcher is armed,
     // and esbuild runs the first build asynchronously after that — printing an
@@ -205,15 +216,19 @@ if (WATCH) {
     console.log('[build-electron] watching for changes...');
   }).catch(onFailure);
 } else {
-  if (CORE_SMOKE) {
-    console.log('[build-electron] Core smoke mode: private premium imports remain unresolved');
-  }
   (async () => {
-    for (let offset = 0; offset < entryPoints.length; offset += BUILD_BATCH_SIZE) {
-      const batch = entryPoints.slice(offset, offset + BUILD_BATCH_SIZE);
+    for (let offset = 0; offset < regularEntryPoints.length; offset += BUILD_BATCH_SIZE) {
+      const batch = regularEntryPoints.slice(offset, offset + BUILD_BATCH_SIZE);
       await build({ ...buildOptions, entryPoints: batch });
-      console.log(`[build-electron] batch ${Math.min(offset + batch.length, entryPoints.length)}/${entryPoints.length}`);
+      console.log(`[build-electron] batch ${Math.min(offset + batch.length, regularEntryPoints.length)}/${regularEntryPoints.length}`);
     }
+    await build({
+      ...buildOptions,
+      entryPoints: [PRELOAD_ENTRY],
+      bundle: true,
+      external: ['electron'],
+    });
+    console.log('[build-electron] bundled sandbox preload');
     copyAssets();
     console.log(`[build-electron] Done in ${Date.now() - start}ms`);
   })().catch(onFailure);
