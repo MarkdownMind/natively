@@ -18,7 +18,8 @@
 // binary that proxies the underlying API):
 //   gpt-5 / -mini / -nano (-2025-08-07)  low, medium, high
 //   gpt-5.1                              none, low, medium, high
-//   gpt-5.2 / 5.4 / 5.5                  none, low, medium, high, xhigh
+//   gpt-5.2 / 5.4 / 5.5 / 5.6            none, low, medium, high, xhigh
+//   gpt-6-astra                         low, medium, high, xhigh, max
 //   gpt-5-codex / 5.1-codex              low, medium, high
 //   gpt-5.2-codex / 5.4-codex / 5.5-codex low, medium, high, xhigh
 //   gpt-5.3-codex / 5.3-codex-spark      low, medium, high
@@ -41,6 +42,10 @@ const VALID = {
     'gpt-5.2':             ['none', 'low', 'medium', 'high', 'xhigh'],
     'gpt-5.4':             ['none', 'low', 'medium', 'high', 'xhigh'],
     'gpt-5.5':             ['none', 'low', 'medium', 'high', 'xhigh'],
+    'gpt-5.6-sol':         ['none', 'low', 'medium', 'high', 'xhigh'],
+    'gpt-5.6-terra':       ['none', 'low', 'medium', 'high', 'xhigh'],
+    'gpt-5.6-luna':        ['none', 'low', 'medium', 'high', 'xhigh'],
+    'gpt-6-astra':         ['low', 'medium', 'high', 'xhigh'],
     'gpt-5-codex':         ['low', 'medium', 'high'],
     'gpt-5.1-codex':       ['low', 'medium', 'high'],
     'gpt-5.2-codex':       ['low', 'medium', 'high', 'xhigh'],

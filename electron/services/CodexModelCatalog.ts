@@ -34,10 +34,12 @@ export const CODEX_MODELS_CACHE_FILE = 'models_cache.json';
  * auth Natively has — each with the backend's own answer, "The '<id>' model is
  * not supported when using Codex with a ChatGPT account." spark from a captured
  * CLI error (CodexCliService.test.mjs); the other three from live requests on
- * 2026-09-11 (issue #558). gpt-5.4 / gpt-5.3-codex were the shipped defaults and
- * sit in real settings files, so they are remapped on load, not just hidden.
+ * 2026-09-11 (issue #558). GPT-5.2, GPT-5.3 Codex, and GPT-5.4 were the shipped
+ * defaults or common persisted values, so they are remapped on load, not just
+ * hidden. GPT-5.4 mini is included because the CLI cache can still advertise it.
  */
 export const CHATGPT_UNSUPPORTED_CODEX_MODELS: ReadonlySet<string> = new Set([
+  'gpt-5.2',
   'gpt-5.3-codex-spark',
   'gpt-5.3-codex',
   'gpt-5.4',

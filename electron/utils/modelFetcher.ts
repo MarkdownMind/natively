@@ -205,6 +205,19 @@ async function fetchNvidiaNimModels(apiKey: string): Promise<ProviderModel[]> {
 
 // ─── OpenAI ──────────────────────────────────────────────────────────────────
 
+/**
+ * The OpenAI API catalog is account-scoped and can change independently of an
+ * app release. Keep this predicate broad enough for new GPT generations while
+ * excluding audio/realtime-only o-series entries that cannot answer chat
+ * requests in this app.
+ */
+export function isOpenAIChatModelId(modelId: unknown): boolean {
+    const id = typeof modelId === 'string' ? modelId.toLowerCase() : '';
+    if (id.includes('gpt-4o')) return true;
+    if (/^gpt-[5-9](?:[.-]|$)/.test(id)) return true;
+    return /^o[134](?:[.-]|$)/.test(id) && !id.includes('audio') && !id.includes('realtime');
+}
+
 async function fetchOpenAIModels(apiKey: string): Promise<ProviderModel[]> {
     const response = await axios.get('https://api.openai.com/v1/models', {
         headers: { Authorization: `Bearer ${apiKey}` },
@@ -213,17 +226,9 @@ async function fetchOpenAIModels(apiKey: string): Promise<ProviderModel[]> {
 
     const models: any[] = response.data?.data || [];
 
-    // Only include: gpt-4o series, gpt-5.x+, o1, o3, o4 series
-    const filtered = models.filter((m: any) => {
-        const id = (m.id || '').toLowerCase();
-        // Include gpt-4o variants
-        if (id.includes('gpt-4o')) return true;
-        // Include gpt-5 and above
-        if (/gpt-[5-9]/.test(id)) return true;
-        // Include o1/o3/o4 reasoning models (but not audio/realtime variants)
-        if (/^o[134]/.test(id) && !id.includes('audio') && !id.includes('realtime')) return true;
-        return false;
-    });
+    // Include the current and future general-purpose GPT generations, plus
+    // chat-capable o-series reasoning models.
+    const filtered = models.filter((m: any) => isOpenAIChatModelId(m?.id));
 
     return filtered
         .map((m: any) => ({ id: m.id, label: m.id }))

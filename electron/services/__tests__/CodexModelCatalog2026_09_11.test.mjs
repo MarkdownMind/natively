@@ -5,7 +5,8 @@
 // catalogue — `$CODEX_HOME/models_cache.json`, which the CLI refreshes from the
 // same backend Natively calls — and falls back to the built-in presets only
 // when no catalogue exists (most users never install the CLI: Natively signs in
-// to ChatGPT itself).
+// to ChatGPT itself). The current fallback set is updated when OpenAI adds a
+// new general-purpose Codex model.
 //
 // Every OS-facing input (env, home dir, path flavour, file reader) is injected,
 // so both the macOS and Windows resolution branches run on either host without
@@ -29,7 +30,7 @@ const { CodexCliService, chatGptCompatibleModel, DEFAULT_CODEX_CLI_CONFIG, CODEX
 // src/utils/modelUtils.ts is imported for REAL (node >= 22.6 strips the types).
 // file:// URL, not a bare path — a bare `C:\…` import throws on Windows.
 const modelUtils = await import(pathToFileURL(path.join(root, 'src/utils/modelUtils.ts')).href);
-const { CODEX_CLI_MODEL, CODEX_CLI_MODEL_PRESETS, codexModelOptions, getCodexCliModelDisplayName } = modelUtils;
+const { CODEX_CLI_MODEL, CODEX_CLI_MODEL_PRESETS, STANDARD_CLOUD_MODELS, codexModelOptions, getCodexCliModelDisplayName } = modelUtils;
 
 // Shape of the file the Codex CLI writes (trimmed to the fields we read; the
 // real file carries ~30 more per model).
@@ -37,6 +38,7 @@ const CACHE = JSON.stringify({
   fetched_at: '2026-08-15T08:21:05.413810Z',
   client_version: '0.148.0',
   models: [
+    { slug: 'gpt-5.2', display_name: 'GPT-5.2', visibility: 'list', priority: 1 },
     { slug: 'gpt-5.4-mini', display_name: 'GPT-5.4-Mini', visibility: 'list', priority: 23 },
     { slug: 'codex-auto-review', display_name: 'Codex Auto Review', visibility: 'hide', priority: 43 },
     { slug: 'gpt-5.6-terra', display_name: 'GPT-5.6-Terra', visibility: 'list', priority: 2 },
@@ -72,9 +74,10 @@ describe('parseCodexModelsCache', () => {
   });
 
   test('drops listed models the backend rejects for a ChatGPT account', () => {
-    // The real cache listed gpt-5.4-mini (visibility "list"); a live request with
-    // a ChatGPT sign-in was refused. The catalogue alone is not proof of use.
+    // The real cache can list deprecated models (visibility "list"); a ChatGPT
+    // sign-in must still filter them. The catalogue alone is not proof of use.
     const ids = parseCodexModelsCache(CACHE).models.map((m) => m.id);
+    assert.ok(!ids.includes('gpt-5.2'));
     assert.ok(!ids.includes('gpt-5.4-mini'));
     assert.ok(isChatGptUnsupportedCodexModel(' GPT-5.4-Mini '));
     assert.ok(!isChatGptUnsupportedCodexModel('gpt-5.5'));
@@ -163,6 +166,27 @@ describe('presets and defaults', () => {
     for (const m of CODEX_CLI_MODEL_PRESETS) assert.ok(!CHATGPT_UNSUPPORTED_CODEX_MODELS.has(m.id), m.id);
     assert.ok(!CHATGPT_UNSUPPORTED_CODEX_MODELS.has(DEFAULT_CODEX_CLI_CONFIG.model));
     assert.ok(!CHATGPT_UNSUPPORTED_CODEX_MODELS.has(DEFAULT_CODEX_CLI_CONFIG.fastModel));
+  });
+
+  test('fallback presets include the current ChatGPT Codex models', () => {
+    assert.deepEqual(CODEX_CLI_MODEL_PRESETS.map((m) => m.id), [
+      'gpt-6-astra',
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
+      'gpt-5.5',
+    ]);
+  });
+
+  test('OpenAI API presets expose the same current flagship models plus its alias', () => {
+    assert.deepEqual(STANDARD_CLOUD_MODELS.openai.ids.slice(0, 6), [
+      'gpt-6-astra',
+      'gpt-5.6',
+      'gpt-5.6-sol',
+      'gpt-5.6-terra',
+      'gpt-5.6-luna',
+      'gpt-5.5',
+    ]);
   });
 
   test('both shipped defaults are presets, so the settings field never opens on an unlisted id', () => {

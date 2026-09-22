@@ -16,9 +16,12 @@ export const STANDARD_CLOUD_MODELS: Record<string, {
     },
     openai: {
         hasKeyCheck: (creds) => !!creds?.hasOpenaiKey,
-        ids: ['gpt-5.4'],
-        names: ['GPT 5.4'],
-        descs: ['OpenAI'],
+        // Keep the current flagship chat models visible before the user's API
+        // key is refreshed. Refresh still replaces this best-effort set with
+        // the account's authoritative /v1/models catalogue.
+        ids: ['gpt-6-astra', 'gpt-5.6', 'gpt-5.6-sol', 'gpt-5.6-terra', 'gpt-5.6-luna', 'gpt-5.5', 'gpt-5.4'],
+        names: ['GPT-6 Astra', 'GPT-5.6 (alias)', 'GPT-5.6 Sol', 'GPT-5.6 Terra', 'GPT-5.6 Luna', 'GPT-5.5', 'GPT-5.4'],
+        descs: ['OpenAI • Flagship', 'OpenAI • Sol alias', 'OpenAI • Professional', 'OpenAI • Balanced', 'OpenAI • Fast', 'OpenAI', 'OpenAI'],
         pmKey: 'openaiPreferredModel'
     },
     claude: {
@@ -153,15 +156,18 @@ export const CODEX_CLI_MODEL = {
  * the CLI. Also the name source for surfaces that only have a selector id
  * (getCodexCliModelDisplayName).
  *
- * Each one answered a live request with a ChatGPT sign-in on 2026-09-11. The
- * previous gpt-5.4 / gpt-5.3-codex / gpt-5.3-codex-spark presets are rejected
- * for a ChatGPT account (CHATGPT_UNSUPPORTED_CODEX_MODELS in
- * electron/services/CodexModelCatalog.ts); a test keeps the two apart.
+ * These are the current general-purpose models available to Codex through a
+ * ChatGPT sign-in. The installed Codex CLI catalogue remains authoritative
+ * when present; these presets cover users who sign in directly in Natively.
+ * GPT-5.4 and GPT-5.4 mini were retired from ChatGPT-authenticated Codex, so
+ * they intentionally do not appear here.
  */
 export const CODEX_CLI_MODEL_PRESETS = [
-    { id: 'gpt-5.5', name: 'ChatGPT 5.5' },
+    { id: 'gpt-6-astra', name: 'GPT-6 Astra' },
+    { id: 'gpt-5.6-sol', name: 'GPT-5.6 Sol' },
     { id: 'gpt-5.6-terra', name: 'GPT-5.6 Terra' },
     { id: 'gpt-5.6-luna', name: 'GPT-5.6 Luna' },
+    { id: 'gpt-5.5', name: 'GPT-5.5' },
 ];
 
 /** Result of the `codex-cli:models` IPC — CodexModelCatalog in the main process. */

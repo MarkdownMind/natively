@@ -171,6 +171,9 @@ const CODEX_MODEL_REASONING_SETS: ReadonlyArray<readonly [string, readonly Codex
   ['gpt-5.2',          ['none', 'low', 'medium', 'high', 'xhigh']],
   ['gpt-5.4',          ['none', 'low', 'medium', 'high', 'xhigh']],
   ['gpt-5.5',          ['none', 'low', 'medium', 'high', 'xhigh']],
+  ['gpt-5.6',          ['none', 'low', 'medium', 'high', 'xhigh']],
+  // GPT-6 Astra does not accept `none`; low is the safe fast default.
+  ['gpt-6-astra',      ['low', 'medium', 'high', 'xhigh']],
   // codex variants — `none` not supported; `xhigh` only on 5.2-codex+.
   ['gpt-5.5-codex',    ['low', 'medium', 'high', 'xhigh']],
   ['gpt-5.4-codex',    ['low', 'medium', 'high', 'xhigh']],

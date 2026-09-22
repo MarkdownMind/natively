@@ -12,7 +12,8 @@
 //
 // Supported sets (OpenAI docs, 2026-06):
 //   gpt-5 / -mini / -nano (original)   minimal, low, medium, high
-//   gpt-5.1 / 5.2 / 5.4 / 5.5          none, low, medium, high (+xhigh on some)
+//   gpt-5.1 / 5.2 / 5.4 / 5.5 / 5.6    none, low, medium, high (+xhigh on some)
+//   gpt-6-astra                         low, medium, high, xhigh, max
 //   gpt-5-codex / 5.x-codex            low, medium, high
 //   gpt-5-pro                          high only
 //   o1 / o3 / o4 (+ -mini/-pro)        low, medium, high
@@ -33,6 +34,10 @@ const VALID = {
   'gpt-5.2': ['none', 'low', 'medium', 'high', 'xhigh'],
   'gpt-5.4': ['none', 'low', 'medium', 'high', 'xhigh'],
   'gpt-5.5': ['none', 'low', 'medium', 'high', 'xhigh'],
+  'gpt-5.6-sol': ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+  'gpt-5.6-terra': ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+  'gpt-5.6-luna': ['none', 'low', 'medium', 'high', 'xhigh', 'max'],
+  'gpt-6-astra': ['low', 'medium', 'high', 'xhigh', 'max'],
   'gpt-5-codex': ['low', 'medium', 'high'],
   'gpt-5.1-codex': ['low', 'medium', 'high'],
   'gpt-5.2-codex': ['low', 'medium', 'high', 'xhigh'],
@@ -64,6 +69,8 @@ describe('getOpenAiReasoningEffort — picks a VALID effort per family', () => {
     assert.equal(getOpenAiReasoningEffort('gpt-5.1'), 'low');
     assert.equal(getOpenAiReasoningEffort('gpt-5.2'), 'low');
     assert.equal(getOpenAiReasoningEffort('gpt-5.5'), 'low');
+    assert.equal(getOpenAiReasoningEffort('gpt-5.6-sol'), 'low');
+    assert.equal(getOpenAiReasoningEffort('gpt-6-astra'), 'low');
   });
 
   test("original gpt-5 line keeps 'minimal' (the only family that supports it)", () => {

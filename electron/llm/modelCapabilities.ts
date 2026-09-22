@@ -202,7 +202,7 @@ export function getModelCapabilities(modelId: string, isOllama: boolean): ModelC
   if (isCloudIdentifier(id)) {
     const b = TIER_BUDGETS['cloud'];
     const supportsImages = lower.startsWith('gemini-') || lower.startsWith('claude-')
-      || lower.startsWith('gpt-4o') || lower.startsWith('gpt-4.1') || lower.startsWith('gpt-5')
+      || lower.startsWith('gpt-4o') || lower.startsWith('gpt-4.1') || lower.startsWith('gpt-5') || lower.startsWith('gpt-6')
       || lower === 'natively' || lower.startsWith('natively-')
       || gatewayVisionHint;
     return {
@@ -280,7 +280,7 @@ export function estimateTokens(text: string): number {
 // 16384, so the global 65536 default failed on the very first request).
 //
 // Documented output caps (OpenAI docs, 2026-06):
-//   gpt-5 / 5.1 / 5.2 / 5.4 / 5.5 (+ -mini/-nano) → 128000
+//   gpt-5 / 5.1 / 5.2 / 5.4 / 5.5 / 5.6 / 6 (+ -mini/-nano) → 128000
 //   o1 / o3 / o4 (+ -mini/-pro)                   → 100000
 //   gpt-4.1 (+ -mini)                             → 32768
 //   gpt-4o (+ -mini)                              → 16384
@@ -292,7 +292,7 @@ export function estimateTokens(text: string): number {
 export function getOpenAiMaxOutput(modelId: string, requested: number): number {
   const id = (modelId || '').toLowerCase();
   let cap: number;
-  if (/\bgpt-5/.test(id)) cap = 128000; // gpt-5.x family
+  if (/\bgpt-[56](?:[.-]|\b)/.test(id)) cap = 128000; // current GPT-5/6 families
   else if (/\bo[1-9]\b/.test(id) || /\bo[1-9]-/.test(id)) cap = 100000; // o1/o3/o4 reasoners
   else if (id.startsWith('gpt-4.1')) cap = 32768;
   else if (id.startsWith('gpt-4o')) cap = 16384;
@@ -312,7 +312,8 @@ export type OpenAiReasoningEffort = 'none' | 'minimal' | 'low' | 'medium' | 'hig
 // original gpt-5 line (see issue: gpt-5.4/5.5 reject `minimal` with a 400). We
 // pick a low-latency level the model actually accepts so TTFT stays low:
 //   - original gpt-5 / -mini / -nano      → minimal   (none not supported)
-//   - gpt-5.1 / 5.2 / 5.4 / 5.5 (chat)    → low       (minimal removed; low keeps light reasoning)
+//   - gpt-5.1 / 5.2 / 5.4 / 5.5 / 5.6 (chat) → low (minimal removed; low keeps light reasoning)
+//   - gpt-6-astra                         → low       (none is unsupported)
 //   - gpt-5-codex / gpt-5.x-codex         → low       (neither none nor minimal supported)
 //   - gpt-5-pro                           → high      (only high is accepted)
 //   - o1 / o3 / o4 (and -mini/-pro)       → low       (only low/medium/high)
@@ -322,6 +323,8 @@ export function getOpenAiReasoningEffort(modelId: string): OpenAiReasoningEffort
 
   // o-series reasoners: low/medium/high only.
   if (/\bo[1-9]\b/.test(id) || /\bo[1-9]-/.test(id)) return 'low';
+
+  if (/\bgpt-6/.test(id)) return 'low';
 
   if (/\bgpt-5/.test(id)) {
     if (id.includes('gpt-5-pro') || id.includes('gpt-5.1-pro') || id.includes('gpt-5.2-pro')) return 'high'; // pro: high only
