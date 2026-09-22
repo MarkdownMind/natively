@@ -61,6 +61,14 @@ export interface CustomProvider {
     id: string;
     name: string;
     curlCommand: string;
+    /** Transport for first-class OpenAI-compatible endpoints. */
+    transport?: 'curl' | 'openai-compatible';
+    baseURL?: string;
+    model?: string;
+    /** Stored encrypted with the rest of the provider credentials. */
+    apiKey?: string;
+    /** Renderer-safe indicator returned by get-custom-providers. */
+    hasApiKey?: boolean;
     /**
      * Whether this provider can accept screenshots. When undefined, vision
      * support is auto-detected from the cURL template (an `{{IMAGE_BASE64}}`
@@ -87,7 +95,12 @@ export interface CurlProvider {
     id: string;
     name: string;
     curlCommand: string;
-    responsePath: string; // e.g. "choices[0].message.content"
+    responsePath?: string; // e.g. "choices[0].message.content"
+    transport?: 'curl' | 'openai-compatible';
+    baseURL?: string;
+    model?: string;
+    apiKey?: string;
+    hasApiKey?: boolean;
 }
 
 /**

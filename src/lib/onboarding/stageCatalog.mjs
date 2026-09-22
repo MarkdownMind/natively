@@ -14,6 +14,10 @@
 export const REVIEW_PROMPT_MIN_SESSIONS = 3;
 export const REVIEW_PROMPT_MIN_USAGE_MS = 30 * 60 * 1000;
 
+// Keep the open build quiet. Commercial prompts are only reachable through an
+// explicit user action elsewhere in Settings.
+export const COMMERCIAL_PROMOTIONS_ENABLED = false;
+
 export function reviewEngagementMet(ctx) {
   return ctx.startupCount >= REVIEW_PROMPT_MIN_SESSIONS
     || ctx.totalUsageMs >= REVIEW_PROMPT_MIN_USAGE_MS;
@@ -95,9 +99,9 @@ export const STAGES = [
       requiresMeetingInactive: true,
     },
     requiresStages: ['modes_manager'],
-    skipWhen: (s) => s.hasNativelyKey || s.hasTrialToken || s.isPremium,
+    skipWhen: (s) => !COMMERCIAL_PROMOTIONS_ENABLED || s.hasNativelyKey || s.hasTrialToken || s.isPremium,
     cooldownMs: () => 21 * 24 * 60 * 60 * 1000,
-    reEligibility: (s) => !s.hasNativelyKey && !s.hasTrialToken && !s.isPremium,
+    reEligibility: (s) => COMMERCIAL_PROMOTIONS_ENABLED && !s.hasNativelyKey && !s.hasTrialToken && !s.isPremium,
   },
   {
     id: 'support',
@@ -109,7 +113,7 @@ export const STAGES = [
       requiresMeetingInactive: true,
     },
     requiresStages: ['quiet_window'],
-    skipWhen: (s) => !s.donationShouldShow || s.isPremium,
+    skipWhen: (s) => !COMMERCIAL_PROMOTIONS_ENABLED || !s.donationShouldShow || s.isPremium,
     customPredicate: (ctx) => ctx.turnCount >= 10 || ctx.startupCount >= 10,
     cooldownMs: () => 14 * 24 * 60 * 60 * 1000,
   },
@@ -124,7 +128,7 @@ export const STAGES = [
       requiresStartupCount: 4,
     },
     requiresStages: ['support'],
-    skipWhen: (s) => s.isPremium,
+    skipWhen: (s) => !COMMERCIAL_PROMOTIONS_ENABLED || s.isPremium,
     cooldownMs: () => 14 * 24 * 60 * 60 * 1000,
   },
   {

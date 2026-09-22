@@ -1865,6 +1865,11 @@ interface CustomProvider {
     name: string;
     curlCommand: string;
     responsePath: string;
+    transport?: 'curl' | 'openai-compatible';
+    baseURL?: string;
+    model?: string;
+    apiKey?: string;
+    hasApiKey?: boolean;
     /** Whether this provider accepts screenshots. undefined = auto-detect from the cURL template. */
     multimodal?: boolean;
 }
@@ -2442,6 +2447,10 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
     const [isEditingCustom, setIsEditingCustom] = useState(false);
     const [editingProvider, setEditingProvider] = useState<CustomProvider | null>(null);
     const [customName, setCustomName] = useState('');
+    const [customTransport, setCustomTransport] = useState<'curl' | 'openai-compatible'>('openai-compatible');
+    const [customBaseURL, setCustomBaseURL] = useState('');
+    const [customApiKey, setCustomApiKey] = useState('');
+    const [customModel, setCustomModel] = useState('');
     const [customCurl, setCustomCurl] = useState('');
     const [customResponsePath, setCustomResponsePath] = useState('');
     // 'auto' = detect vision support from the template; 'on'/'off' = explicit override.
@@ -3913,6 +3922,10 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
     const handleEditProvider = (provider: CustomProvider) => {
         setEditingProvider(provider);
         setCustomName(provider.name);
+        setCustomTransport(provider.transport === 'openai-compatible' ? 'openai-compatible' : 'curl');
+        setCustomBaseURL(provider.baseURL || '');
+        setCustomApiKey('');
+        setCustomModel(provider.model || '');
         setCustomCurl(provider.curlCommand);
         setCustomResponsePath(provider.responsePath || '');
         setCustomVision(provider.multimodal === true ? 'on' : provider.multimodal === false ? 'off' : 'auto');
@@ -3923,6 +3936,10 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
     const handleNewProvider = () => {
         setEditingProvider(null);
         setCustomName('');
+        setCustomTransport('openai-compatible');
+        setCustomBaseURL('https://opencode.ai/zen/v1/chat/completions');
+        setCustomApiKey('');
+        setCustomModel('');
         setCustomCurl('');
         setCustomResponsePath('');
         setCustomVision('auto');
@@ -3937,17 +3954,41 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
             return;
         }
 
-        const validation = validateCurl(customCurl);
-        if (!validation.isValid) {
-            setCurlError(validation.message || t("Invalid cURL command."));
-            return;
+        if (customTransport === 'openai-compatible') {
+            if (!customBaseURL.trim()) {
+                setCurlError(t('Endpoint URL is required.'));
+                return;
+            }
+            if (!customModel.trim()) {
+                setCurlError(t('Model name is required.'));
+                return;
+            }
+            try {
+                const url = new URL(customBaseURL.trim());
+                if (!['http:', 'https:'].includes(url.protocol)) throw new Error('protocol');
+            } catch {
+                setCurlError(t('Endpoint URL must be a valid http(s) URL.'));
+                return;
+            }
+        } else {
+            const validation = validateCurl(customCurl);
+            if (!validation.isValid) {
+                setCurlError(validation.message || t("Invalid cURL command."));
+                return;
+            }
         }
 
         const newProvider: CustomProvider = {
             id: editingProvider ? editingProvider.id : crypto.randomUUID(),
             name: customName,
-            curlCommand: customCurl,
-            responsePath: customResponsePath,
+            transport: customTransport,
+            curlCommand: customTransport === 'openai-compatible' ? '' : customCurl,
+            responsePath: customTransport === 'openai-compatible' ? (customResponsePath || 'choices[0].message.content') : customResponsePath,
+            ...(customTransport === 'openai-compatible' ? {
+                baseURL: customBaseURL.trim(),
+                model: customModel.trim(),
+                ...(customApiKey.trim() ? { apiKey: customApiKey.trim() } : {}),
+            } : {}),
             // 'auto' → omit the flag so the backend auto-detects from the template.
             ...(customVision === 'on' ? { multimodal: true } : customVision === 'off' ? { multimodal: false } : {}),
         };
@@ -5264,18 +5305,94 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
                             </div>
 
                             <div>
-                                <label className="block aip-label mb-1">{t('cURL Command')}</label>
-                                <div className="relative">
-                                    <textarea
-                                        value={customCurl}
-                                        onChange={(e) => setCustomCurl(e.target.value)}
-                                        placeholder={`curl https://api.openai.com/v1/chat/completions ... "content": "{{TEXT}}"`}
-                                        data-mono="true"
-                                        rows={7}
-                                        className="aip-input"
-                                    />
+                                <label className="block aip-label mb-1">{t('Connection type')}</label>
+                                <div className="flex flex-wrap gap-2">
+                                    <button
+                                        type="button"
+                                        className="aip-btn"
+                                        data-active={customTransport === 'openai-compatible'}
+                                        onClick={() => setCustomTransport('openai-compatible')}
+                                    >
+                                        {t('OpenAI-compatible')}
+                                    </button>
+                                    <button
+                                        type="button"
+                                        className="aip-btn"
+                                        data-active={customTransport === 'curl'}
+                                        onClick={() => setCustomTransport('curl')}
+                                    >
+                                        {t('Custom cURL')}
+                                    </button>
                                 </div>
                             </div>
+
+                            {customTransport === 'openai-compatible' ? (
+                                <div className="space-y-4">
+                                    <div>
+                                        <label className="block aip-label mb-1">{t('Quick setup')}</label>
+                                        <div className="flex flex-wrap gap-2">
+                                            <button type="button" className="aip-chip" onClick={() => {
+                                                setCustomName('OpenCode Zen');
+                                                setCustomBaseURL('https://opencode.ai/zen/v1/chat/completions');
+                                            }}>{t('OpenCode Zen')}</button>
+                                            <button type="button" className="aip-chip" onClick={() => {
+                                                setCustomName('OpenCode Go');
+                                                setCustomBaseURL('https://opencode.ai/zen/go/v1/chat/completions');
+                                            }}>{t('OpenCode Go')}</button>
+                                        </div>
+                                        <p className="text-[10px] aip-muted mt-1">{t('These presets use OpenCode’s OpenAI-compatible chat endpoint. Choose a model available to your account.')}</p>
+                                    </div>
+                                    <div>
+                                        <label className="block aip-label mb-1">{t('Endpoint URL')}</label>
+                                        <input
+                                            type="url"
+                                            value={customBaseURL}
+                                            onChange={(e) => setCustomBaseURL(e.target.value)}
+                                            placeholder="https://provider.example/v1/chat/completions"
+                                            data-mono="true"
+                                            className="aip-input"
+                                        />
+                                    </div>
+                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                                        <div>
+                                            <label className="block aip-label mb-1">{t('API key')} {editingProvider?.hasApiKey && <span className="aip-faint normal-case">{t('(saved; leave blank to keep)')}</span>}</label>
+                                            <input
+                                                type="password"
+                                                value={customApiKey}
+                                                onChange={(e) => setCustomApiKey(e.target.value)}
+                                                placeholder={editingProvider?.hasApiKey ? '••••••••' : t('Optional for local endpoints')}
+                                                autoComplete="new-password"
+                                                className="aip-input"
+                                            />
+                                        </div>
+                                        <div>
+                                            <label className="block aip-label mb-1">{t('Model')}</label>
+                                            <input
+                                                type="text"
+                                                value={customModel}
+                                                onChange={(e) => setCustomModel(e.target.value)}
+                                                placeholder="model-name"
+                                                data-mono="true"
+                                                className="aip-input"
+                                            />
+                                        </div>
+                                    </div>
+                                </div>
+                            ) : (
+                                <div>
+                                    <label className="block aip-label mb-1">{t('cURL Command')}</label>
+                                    <div className="relative">
+                                        <textarea
+                                            value={customCurl}
+                                            onChange={(e) => setCustomCurl(e.target.value)}
+                                            placeholder={`curl https://api.openai.com/v1/chat/completions ... "content": "{{TEXT}}"`}
+                                            data-mono="true"
+                                            rows={7}
+                                            className="aip-input"
+                                        />
+                                    </div>
+                                </div>
+                            )}
 
                             <div>
                                 <label className="block aip-label mb-1">
@@ -5333,6 +5450,14 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
                                             <div className="flex items-center gap-2 text-xs">
                                                 <code className="aip-code-inline shrink-0">{"{{IMAGE_BASE64}}"}</code>
                                                 <span className="aip-muted">{t('Screenshot data (if available)')}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2 text-xs">
+                                                <code className="aip-code-inline shrink-0">{"{{MODEL}}"}</code>
+                                                <span className="aip-muted">{t('Configured model name (OpenAI-compatible providers)')}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2 text-xs">
+                                                <code className="aip-code-inline shrink-0">{"{{SYSTEM_PROMPT}}"}</code>
+                                                <span className="aip-muted">{t('System prompt only')}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -5418,7 +5543,9 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
                                         <div className="min-w-0">
                                             <h4 className="aip-card-title truncate">{provider.name}</h4>
                                             <p className="aip-mono aip-muted truncate max-w-[240px]">
-                                                {provider.curlCommand.substring(0, 30)}...
+                                                {provider.transport === 'openai-compatible'
+                                                    ? `${t('OpenAI-compatible')} · ${provider.model || t('model not set')}`
+                                                    : `${provider.curlCommand.substring(0, 30)}...`}
                                             </p>
                                             {provider.responsePath && (
                                                 <p className="aip-meta truncate mt-0.5">

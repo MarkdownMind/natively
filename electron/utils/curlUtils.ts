@@ -17,6 +17,41 @@ import {
 } from './curlPlaceholderPolicy';
 
 /**
+ * Build the internal cURL template for a user-configured OpenAI-compatible
+ * endpoint. The API key stays in the encrypted main-process provider record;
+ * this command only exists transiently while a request is being prepared.
+ */
+export function buildOpenAICompatibleCurl(provider: {
+    baseURL?: string;
+    apiKey?: string;
+    model?: string;
+}): string {
+    let endpoint = String(provider.baseURL || '').trim().replace(/\/+$/, '');
+    if (!/\/chat\/completions$/i.test(endpoint)) {
+        endpoint = /\/v1$/i.test(endpoint)
+            ? `${endpoint}/chat/completions`
+            : `${endpoint}/v1/chat/completions`;
+    }
+
+    const shellQuote = (value: string): string => `'${value.replace(/'/g, `'"'"'`)}'`;
+    const body = JSON.stringify({
+        model: provider.model || '{{MODEL}}',
+        messages: [
+            { role: 'system', content: '{{SYSTEM_PROMPT}}' },
+            { role: 'user', content: '{{TEXT}}' },
+        ],
+        stream: true,
+    });
+    const args = [
+        'curl', shellQuote(endpoint),
+        '-H', shellQuote('Content-Type: application/json'),
+    ];
+    if (provider.apiKey) args.push('-H', shellQuote(`Authorization: Bearer ${provider.apiKey}`));
+    args.push('-d', shellQuote(body));
+    return args.join(' ');
+}
+
+/**
  * Validates if the cURL command is parseable and contains required variables
  */
 export const validateCurl = (curl: string): CurlValidationResult => {

@@ -35,7 +35,11 @@ export interface ActiveCustomProvider {
   id?: string;
   name?: string;
   curlCommand?: string;
+  transport?: 'curl' | 'openai-compatible';
+  baseURL?: string;
+  apiKey?: string;
   model?: string;
+  hasApiKey?: boolean;
   multimodal?: boolean;
   localOnly?: boolean;
   responsePath?: string;

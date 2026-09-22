@@ -278,19 +278,19 @@ test('support: requires turnCount >= 10', () => {
   assert.equal(show('support', ctx), false);
 });
 
-test('support: fires with quiet_window + 10 turns + 10s homepage', () => {
+test('support: commercial prompt is disabled even when otherwise eligible', () => {
   const ctx = makeCtx({
     userState: { ...DEFAULT_USER_STATE, donationShouldShow: true },
     completed: { quiet_window: 1 },
     turnCount: 15,
     homepageMountedFor: 11_000,
   });
-  assert.equal(show('support', ctx), true);
+  assert.equal(show('support', ctx), false);
 });
 
 // ─── Ads ──────────────────────────────────────────────────────────
 
-test('ads: requires startupCount >= 4', () => {
+test('ads: commercial prompt is disabled before startup gating', () => {
   const ctx = makeCtx({
     completed: { support: 1 },
     startupCount: 3,
@@ -307,7 +307,7 @@ test('ads: requires support prerequisite', () => {
   assert.equal(show('ads', ctx), false);
 });
 
-test('ads: skipped when isPremium', () => {
+test('ads: remains disabled for premium users', () => {
   const ctx = makeCtx({
     userState: { ...DEFAULT_USER_STATE, isPremium: true },
     completed: { support: 1 },

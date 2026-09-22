@@ -64,6 +64,15 @@ type DirectAssistEvent =
 
 // Types for the exposed Electron API
 interface ElectronAPI {
+  getPromptSettings: () => Promise<{
+    systemPrompt: string;
+    shortcutPrompts: Record<string, string>;
+  }>;
+  setPromptSettings: (settings: {
+    systemPrompt: string;
+    shortcutPrompts: Record<string, string>;
+  }) => Promise<{ success: boolean; error?: string; settings?: any }>;
+  resetPromptSettings: () => Promise<{ success: boolean; error?: string; settings?: any }>;
   updateContentDimensions: (dimensions: { width: number; height: number }) => Promise<void>;
   updateContentDimensionsCentered: (dimensions: {
     width: number;
@@ -2429,6 +2438,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   saveCustomProvider: (provider: any) => ipcRenderer.invoke('save-custom-provider', provider),
   getCustomProviders: () => ipcRenderer.invoke('get-custom-providers'),
   deleteCustomProvider: (id: string) => ipcRenderer.invoke('delete-custom-provider', id),
+  getPromptSettings: () => ipcRenderer.invoke('prompts:get-settings'),
+  setPromptSettings: (settings: any) => ipcRenderer.invoke('prompts:set-settings', settings),
+  resetPromptSettings: () => ipcRenderer.invoke('prompts:reset'),
 
   // Follow-up Email
   generateFollowupEmail: (input: any) => ipcRenderer.invoke('generate-followup-email', input),

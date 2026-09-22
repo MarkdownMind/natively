@@ -59,10 +59,11 @@ import { resolveVisionPolicy, readScreenUnderstandingMode, isLocalVisionProvider
 import { profileInterceptAllowedByRoute, modeAnswerType, type StreamRouteOptions } from "./llm/streamContextPolicy"
 import type { ActiveModeDocumentGroundingInfo } from "./services/ModesManager"
 import type { TranscriptTurn } from "./llm/transcriptCleaner"
-import { applyCurlVariables, getByPath, injectImageIntoMessages, flattenStructuredJsonAnswer, blockedInfrastructureHost } from './utils/curlUtils';
+import { applyCurlVariables, buildOpenAICompatibleCurl, getByPath, injectImageIntoMessages, flattenStructuredJsonAnswer, blockedInfrastructureHost } from './utils/curlUtils';
 import { getImageOptimizer } from './services/screen/ImageOptimizer';
 import curl2Json from "@bany/curl-to-json";
 import { CustomProvider, CurlProvider } from './services/CredentialsManager';
+import { appendSystemPromptOverride } from './llm/userPromptSettings';
 import { TRIAL_SENTINEL_KEY } from './config/constants';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -81,6 +82,12 @@ import type {
   DirectAssistSelection,
 } from './direct-assist/types';
 const execAsync = promisify(exec);
+
+function customProviderCurlCommand(provider: CustomProvider): string {
+  return provider.transport === 'openai-compatible'
+    ? buildOpenAICompatibleCurl(provider)
+    : provider.curlCommand;
+}
 const NATIVELY_API_URL = (process.env.NATIVELY_API_URL || 'https://api.natively.software').replace(/\/+$/, '');
 
 function nowMs(): number {
@@ -2025,7 +2032,7 @@ export class LLMHelper {
           throw new Error('No custom provider configured');
         }
         return this.executeCustomProvider(
-          this.customProvider.curlCommand,
+          customProviderCurlCommand(this.customProvider),
           `${systemPrompt}\n\n${userPrompt}`,
           systemPrompt,
           userPrompt,
@@ -4306,6 +4313,11 @@ if (!shouldSkipModeInjection) {
       if (pinnedLayer) systemPromptOverride = `${baseForPin}\n\n${pinnedLayer}`;
     }
 
+    // The non-streaming/manual chat path has its own prompt assembly, so apply
+    // the same user system layer before it fans out to provider-specific
+    // system prompts.
+    if (systemPromptOverride) systemPromptOverride = appendSystemPromptOverride(systemPromptOverride);
+
     if (modeContextBlock) {
       const existingLen = context?.length ?? 0;
       const COMBINED_CTX_CAP = 60_000;
@@ -4477,7 +4489,7 @@ let isMultimodal = !!(imagePaths?.length);
           ? ""
           : this.injectLanguageInstruction(systemPromptOverride || CUSTOM_SYSTEM_PROMPT);
         const response = await this.executeCustomProvider(
-          this.customProvider.curlCommand,
+          customProviderCurlCommand(this.customProvider),
           cloudCombinedMessages.gemini,
           customSystemPrompt,
           message,
@@ -4909,7 +4921,7 @@ let isMultimodal = !!(imagePaths?.length);
       providers.push({
         name: `Custom Provider (${this.customProvider.name})`,
         execute: () => this.executeCustomProvider(
-          this.customProvider!.curlCommand,
+          customProviderCurlCommand(this.customProvider!),
           message,
           '',
           message,
@@ -5833,6 +5845,7 @@ let isMultimodal = !!(imagePaths?.length);
       // model as the literal characters \" and \n. Serialization is the
       // serializer's job; the value goes in as the user wrote it.
       TEXT: fullPrompt,
+      MODEL: this.activeCurlProvider.model || '',
       IMAGE_BASE64: base64Image,
     };
 
@@ -6064,6 +6077,7 @@ let isMultimodal = !!(imagePaths?.length);
       SYSTEM_PROMPT: systemPrompt,       // Raw System Prompt
       USER_MESSAGE: rawUserMessage,      // Raw User Message
       CONTEXT: context,                  // Raw Context
+      MODEL: '',                          // Optional {{MODEL}} template variable
       IMAGE_BASE64: base64Image,         // Base64 encoded image string
     };
 
@@ -6559,7 +6573,7 @@ let isMultimodal = !!(imagePaths?.length);
         localProviders.push({
           name: `Custom Provider (${this.customProvider.name})`,
           execute: () => this.executeCustomProvider(
-            this.customProvider!.curlCommand,
+            customProviderCurlCommand(this.customProvider!),
             `${systemPrompt}\n\n${userPrompt}`,
             systemPrompt,
             userPrompt,
@@ -6572,7 +6586,7 @@ let isMultimodal = !!(imagePaths?.length);
         localProviders.push({
           name: `Custom Provider (${this.customProvider.name})`,
           execute: () => this.executeCustomProvider(
-            this.customProvider!.curlCommand,
+            customProviderCurlCommand(this.customProvider!),
             `${systemPrompt}\n\n${userPrompt}`,
             systemPrompt,
             userPrompt,
@@ -8297,6 +8311,11 @@ let isMultimodal = !!(imagePaths?.length);
           if (pinnedLayer) systemPromptOverride = `${baseForPin}\n\n${pinnedLayer}`;
         }
 
+        // Apply the user-authored system layer before local-only routing. The
+        // helper is idempotent, so the final prompt boundary below can safely
+        // cover calls that did not carry an override through this block.
+        if (systemPromptOverride) systemPromptOverride = appendSystemPromptOverride(systemPromptOverride);
+
         if (isActiveCustomMode) {
           console.log('[LLMHelper] Active custom mode injection', {
             selectedModeType: 'custom',
@@ -8437,7 +8456,7 @@ let isMultimodal = !!(imagePaths?.length);
 
     // Determine the system prompt to use
     // logic: if override provided, use it. otherwise use HARD_SYSTEM_PROMPT (which is the universal base)
-    let baseSystemPrompt = systemPromptOverride || HARD_SYSTEM_PROMPT;
+    let baseSystemPrompt = appendSystemPromptOverride(systemPromptOverride || HARD_SYSTEM_PROMPT);
     // Document-grounded custom mode (audit 2026-06-28, weak-model real-path
     // fix): append the greeting-suppression + answer-directly override at the
     // SOURCE. This runs INSIDE streamChat so it applies on EVERY entry point
@@ -11098,7 +11117,7 @@ let isMultimodal = !!(imagePaths?.length);
       this.assertOutboundScopes('custom_provider', message, imagePaths);
     }
 
-    const curlCommand = selectedCustomProvider.curlCommand;
+    const curlCommand = customProviderCurlCommand(selectedCustomProvider);
     const requestConfig = curl2Json(curlCommand);
 
     let base64Image = "";
@@ -11163,6 +11182,7 @@ let isMultimodal = !!(imagePaths?.length);
       SYSTEM_PROMPT: systemPrompt,
       USER_MESSAGE: message,
       CONTEXT: context || "",
+      MODEL: selectedCustomProvider.model || '',
       IMAGE_BASE64: base64Image,
     };
 
@@ -11303,7 +11323,7 @@ let isMultimodal = !!(imagePaths?.length);
           if (payload === '[DONE]') return { complete: true, item: null };
           try {
             JSON.parse(payload);
-            return { complete: true, item: this.parseStreamLine(trimmed, this.customProvider?.responsePath) };
+            return { complete: true, item: this.parseStreamLine(trimmed, selectedCustomProvider.responsePath) };
           } catch {
             return { complete: false, item: null };
           }
@@ -11311,7 +11331,7 @@ let isMultimodal = !!(imagePaths?.length);
         if (trimmed.startsWith('{') && trimmed.endsWith('}')) {
           try {
             JSON.parse(trimmed);
-            return { complete: true, item: this.parseStreamLine(trimmed, this.customProvider?.responsePath) };
+            return { complete: true, item: this.parseStreamLine(trimmed, selectedCustomProvider.responsePath) };
           } catch {
             return { complete: false, item: null };
           }
@@ -11332,7 +11352,7 @@ let isMultimodal = !!(imagePaths?.length);
         for (const line of lines) {
           if (line.trim().length === 0) continue;
 
-          const items = this.parseStreamLine(line, this.customProvider?.responsePath);
+          const items = this.parseStreamLine(line, selectedCustomProvider.responsePath);
           if (items) {
             yield items;
             yieldedAny = true;
@@ -11358,7 +11378,7 @@ let isMultimodal = !!(imagePaths?.length);
       fullBody += decoderTail;
       lineBuffer += decoderTail;
       if (lineBuffer.trim().length > 0) {
-        const item = this.parseStreamLine(lineBuffer, this.customProvider?.responsePath);
+        const item = this.parseStreamLine(lineBuffer, selectedCustomProvider.responsePath);
         if (item) {
           yield item;
           yieldedAny = true;
@@ -11374,7 +11394,7 @@ let isMultimodal = !!(imagePaths?.length);
           // Whole-body branch only. parseStreamLine deliberately keeps using the
           // shape heuristics: a responsePath aimed at a complete response body
           // does not resolve against an SSE delta chunk.
-          const extracted = this.extractCustomAnswer(data, this.customProvider?.responsePath);
+          const extracted = this.extractCustomAnswer(data, selectedCustomProvider.responsePath);
           if (extracted) yield extracted;
         } catch {
           // Not JSON, yield raw text if it's not looking like garbage
@@ -13209,6 +13229,7 @@ let isMultimodal = !!(imagePaths?.length);
   public async switchToCustom(provider: CustomProvider): Promise<void> {
     if (this.useOllama) this.releaseOllamaPin(this.ollamaModel);
     this.customProvider = provider;
+    this.activeCurlProvider = null;
     this.useOllama = false;
     this.client = null;
     this.groqClient = null;

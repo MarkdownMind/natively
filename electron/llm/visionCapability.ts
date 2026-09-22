@@ -97,12 +97,14 @@ export function resolveOllamaVision(modelId: string, probed: boolean | null): bo
  * and silently dropping the screenshot.
  */
 export function customProviderSupportsVision(
-  provider: { curlCommand?: string; multimodal?: boolean } | null | undefined,
+  provider: { curlCommand?: string; transport?: string; multimodal?: boolean } | null | undefined,
 ): boolean {
   if (!provider) return false;
   if (typeof provider.multimodal === 'boolean') return provider.multimodal;
 
-  const curl = provider.curlCommand || '';
+  const curl = provider.curlCommand || (provider.transport === 'openai-compatible'
+    ? '"messages":[{"role":"user"}]'
+    : '');
   if (!curl) return false;
 
   // (1) Explicit image placeholder anywhere in the template.
@@ -199,12 +201,12 @@ function firstUrl(curl: string): string {
  * An explicit `localOnly` flag, when present, wins over URL detection.
  */
 export function customProviderIsLocal(
-  provider: { curlCommand?: string; localOnly?: boolean } | null | undefined,
+  provider: { curlCommand?: string; baseURL?: string; localOnly?: boolean } | null | undefined,
 ): boolean {
   if (!provider) return false;
   if (typeof provider.localOnly === 'boolean') return provider.localOnly;
 
-  const curl = provider.curlCommand || '';
+  const curl = provider.curlCommand || provider.baseURL || '';
   const m = curl.match(/https?:\/\/[^\s'"`]+/i);
   if (!m) return false;
   let host: string;

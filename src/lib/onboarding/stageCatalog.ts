@@ -28,6 +28,12 @@ import type { Ctx, StageConfig, ToasterId } from './orchestrator';
 export const REVIEW_PROMPT_MIN_SESSIONS = 3;
 export const REVIEW_PROMPT_MIN_USAGE_MS = 30 * 60 * 1000;
 
+// Commercial prompts are intentionally disabled in the open build. The app
+// should not interrupt a user with trial, support, or rotating ad campaigns.
+// Explicit upgrade/settings actions remain available where the user invokes
+// them.
+export const COMMERCIAL_PROMOTIONS_ENABLED = false;
+
 /** True once the user is engaged enough to be asked — sessions OR usage. */
 export function reviewEngagementMet(ctx: Ctx): boolean {
   return ctx.startupCount >= REVIEW_PROMPT_MIN_SESSIONS
@@ -140,11 +146,12 @@ export const STAGES: StageConfig[] = [
     },
     requiresStages: ['modes_manager'],
     skipWhen: (s) =>
+      !COMMERCIAL_PROMOTIONS_ENABLED ||
       s.hasNativelyKey ||
       s.hasTrialToken ||
       s.isPremium,
     cooldownMs: () => 21 * 24 * 60 * 60 * 1000, // 21 days
-    reEligibility: (s) => !s.hasNativelyKey && !s.hasTrialToken && !s.isPremium,
+    reEligibility: (s) => COMMERCIAL_PROMOTIONS_ENABLED && !s.hasNativelyKey && !s.hasTrialToken && !s.isPremium,
   },
 
   // ──────────────────────────────────────────────────────────────
@@ -160,7 +167,7 @@ export const STAGES: StageConfig[] = [
       requiresMeetingInactive: true,
     },
     requiresStages: ['quiet_window'],
-    skipWhen: (s) => !s.donationShouldShow || s.isPremium,
+    skipWhen: (s) => !COMMERCIAL_PROMOTIONS_ENABLED || !s.donationShouldShow || s.isPremium,
     customPredicate: (ctx: Ctx) =>
       // Trigger after enough engagement: 10 turns OR 10 successful startups
       ctx.turnCount >= 10 || ctx.startupCount >= 10,
@@ -181,7 +188,7 @@ export const STAGES: StageConfig[] = [
       requiresStartupCount: 4,
     },
     requiresStages: ['support'],
-    skipWhen: (s) => s.isPremium,
+    skipWhen: (s) => !COMMERCIAL_PROMOTIONS_ENABLED || s.isPremium,
     cooldownMs: () => 14 * 24 * 60 * 60 * 1000, // 14 days
   },
 

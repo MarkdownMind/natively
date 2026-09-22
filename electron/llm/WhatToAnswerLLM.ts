@@ -25,6 +25,7 @@ import type { ActiveModeDocumentGroundingInfo } from "../services/ModesManager";
 import type { ModeRetrievalOptions } from "../services/ModeContextRetriever";
 import { isCodeVerificationEnabled } from "./codeVerification/verificationEnabled";
 import type { WhatToAnswerRequestSnapshot } from "./whatToAnswerRequestSnapshot";
+import { appendShortcutPrompt } from './userPromptSettings';
 
 // Wall-clock budget for the pre-stream mode-context HYBRID retrieval await.
 // The hybrid retriever embeds the live query, and the embedder's own hard
@@ -795,11 +796,11 @@ The user triggered this action with a coding problem on screen and NO new questi
                     ? TINY_WHAT_TO_ANSWER_PROMPT
                     : UNIVERSAL_WHAT_TO_ANSWER_PROMPT);
 
-            const finalPromptOverride = activeSkill
+            const finalPromptOverride = appendShortcutPrompt(activeSkill
                 ? `${basePrompt}\n\n## ACTIVE SKILL\n${activeSkill.promptBlock}`
                 : (modePromptSuffix && !v2BasePrompt)
                     ? `${basePrompt}\n\n## ACTIVE MODE\n${modePromptSuffix}`
-                    : basePrompt;
+                    : basePrompt, 'whatToAnswer');
 
             const assembler = new PromptAssembler();
             // ── CONTEXT OS H1: typed EvidencePack GOVERNS the WTA factual prompt ──

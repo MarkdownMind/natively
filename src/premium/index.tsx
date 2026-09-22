@@ -101,8 +101,10 @@ export const JDAwarenessToaster: React.FC<any> =
 export const RemoteCampaignToaster: React.FC<any> =
   get(_remoteCampaignToaster, 'RemoteCampaignToaster', NullComponent);
 
-export const useAdCampaigns: typeof nullAdCampaigns =
-  get(_adHook, 'useAdCampaigns', nullAdCampaigns);
+// Commercial campaign toasters are disabled in the open build. Keep the
+// premium module loader for explicit, user-invoked upgrade surfaces, but never
+// schedule an unsolicited ad campaign from application state.
+export const useAdCampaigns: typeof nullAdCampaigns = nullAdCampaigns;
 
 export const NegotiationCoachingCard: React.FC<any> =
   get(_negotiationCard, 'NegotiationCoachingCard', NullComponent);

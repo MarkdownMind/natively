@@ -1,8 +1,11 @@
 import { app } from 'electron';
 import fs from 'fs';
 import path from 'path';
+import type { PromptSettings } from '../../src/types/promptSettings';
 
 export interface AppSettings {
+    /** User-authored prompt layers. Core prompts remain compiled-in. */
+    promptSettings?: PromptSettings;
     // Only boot-critical or non-encrypted settings should live here.
     // In the future, other non-secret data like 'language' or 'theme'
     // can be moved here from CredentialsManager to allow early boot access.

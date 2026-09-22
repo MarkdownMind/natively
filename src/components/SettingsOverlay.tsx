@@ -7,7 +7,7 @@ import {
     Camera, RotateCcw, Eye, Layout, MessageSquare, Crop,
     ChevronDown, ChevronUp, Check, BadgeCheck, Power, Palette, Calendar, Ghost, Sun, Moon, RefreshCw, Info, Globe, FlaskConical, Terminal, Download, Settings, Activity, ExternalLink, Trash2,
     Sparkles, Pencil, Briefcase, Building2, Search, MapPin, CheckCircle, HelpCircle, Zap, SlidersHorizontal, PointerOff, Folder,
-    Star, AlertCircle, Gift, Smartphone, Cpu, Shield, Code2, Headphones, Boxes
+    Star, AlertCircle, Gift, Smartphone, Cpu, Shield, Code2, Headphones, Boxes, Save
 } from 'lucide-react';
 import { AutoAnswerIcon } from './AutoAnswerIcon';
 import { HiCreditCard } from 'react-icons/hi2';
@@ -92,6 +92,7 @@ const DISGUISE_TILE_RESTING = {
 // Shared with the main process so the picker cannot offer a model the ipc
 // validator rejects. Pure data module — no node/electron imports.
 import { NVIDIA_NIM_STT_MODELS, DEFAULT_NVIDIA_NIM_STT_MODEL, allowedLanguageKeysForNvidiaModel } from '../../electron/audio/nvidiaNimSttModels';
+import { DEFAULT_PROMPT_SETTINGS, type PromptSettings, type ShortcutPromptKey } from '../types/promptSettings';
 
 // ---------------------------------------------------------------------------
 // StarRating — renders filled/empty stars for culture ratings
@@ -651,6 +652,8 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({
     }, [isOpen, initialTab, initialTabSeq]);
 
     const { shortcuts, updateShortcut, resetShortcuts, conflicts } = useShortcuts();
+    const [promptSettings, setPromptSettings] = useState<PromptSettings>(DEFAULT_PROMPT_SETTINGS);
+    const [promptSaveState, setPromptSaveState] = useState<'idle' | 'saving' | 'saved' | 'error'>('idle');
     // Small badge shown next to a shortcut row when globalShortcut.register()
     // failed for it (another app/OS already owns that key combo). The
     // KeyRecorder right next to it is the fix — recording a new combo
@@ -720,8 +723,47 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({
             window.electronAPI?.getAutoAnswerEnabled?.().then(setAutoAnswerEnabled).catch(() => { });
             window.electronAPI?.getCodeVerification?.().then((v) => setCodeVerification(v === true)).catch(() => { });
             window.electronAPI?.getMeetingRetention?.().then(setMeetingRetention).catch(() => { });
+            window.electronAPI?.getPromptSettings?.().then((settings) => {
+                setPromptSettings({
+                    systemPrompt: settings?.systemPrompt || '',
+                    shortcutPrompts: settings?.shortcutPrompts || {},
+                });
+            }).catch(() => { });
         }
     }, [isOpen]);
+
+    const updateShortcutPrompt = (key: ShortcutPromptKey, value: string) => {
+        setPromptSettings((current) => ({
+            ...current,
+            shortcutPrompts: { ...current.shortcutPrompts, [key]: value },
+        }));
+        setPromptSaveState('idle');
+    };
+
+    const savePromptSettings = async () => {
+        setPromptSaveState('saving');
+        try {
+            const result = await window.electronAPI?.setPromptSettings?.(promptSettings);
+            setPromptSaveState(result?.success ? 'saved' : 'error');
+        } catch {
+            setPromptSaveState('error');
+        }
+    };
+
+    const resetPromptSettings = async () => {
+        setPromptSaveState('saving');
+        try {
+            const result = await window.electronAPI?.resetPromptSettings?.();
+            if (result?.success) {
+                setPromptSettings(DEFAULT_PROMPT_SETTINGS);
+                setPromptSaveState('saved');
+            } else {
+                setPromptSaveState('error');
+            }
+        } catch {
+            setPromptSaveState('error');
+        }
+    };
 
 
 
@@ -3252,6 +3294,76 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({
                                                     </div>
                                                 ))}
                                             </div>
+                                        </div>
+
+                                        {/* Prompt controls */}
+                                        <div className="rounded-2xl border border-border-subtle bg-bg-card/60 p-4 space-y-4">
+                                            <div className="flex items-start justify-between gap-4">
+                                                <div>
+                                                    <h4 className="text-sm font-bold text-text-primary">{t('Shortcut prompts')}</h4>
+                                                    <p className="text-xs text-text-secondary mt-1">
+                                                        {t('Add instructions to the actions above. They are appended to the built-in safety and context rules.')}
+                                                    </p>
+                                                </div>
+                                                <div className="flex items-center gap-2 shrink-0">
+                                                    <button
+                                                        type="button"
+                                                        onClick={resetPromptSettings}
+                                                        disabled={promptSaveState === 'saving'}
+                                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg border border-border-subtle text-xs text-text-secondary hover:text-text-primary hover:bg-bg-subtle disabled:opacity-50"
+                                                    >
+                                                        <RotateCcw size={12} /> {t('Reset prompts')}
+                                                    </button>
+                                                    <button
+                                                        type="button"
+                                                        onClick={savePromptSettings}
+                                                        disabled={promptSaveState === 'saving'}
+                                                        className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-accent-primary text-on-accent text-xs font-medium hover:opacity-90 disabled:opacity-50"
+                                                    >
+                                                        <Save size={12} /> {promptSaveState === 'saving' ? t('Saving…') : t('Save prompts')}
+                                                    </button>
+                                                </div>
+                                            </div>
+
+                                            <div>
+                                                <label className="block text-xs font-medium text-text-secondary mb-1">{t('System prompt additions')}</label>
+                                                <textarea
+                                                    value={promptSettings.systemPrompt}
+                                                    onChange={(event) => {
+                                                        setPromptSettings((current) => ({ ...current, systemPrompt: event.target.value }));
+                                                        setPromptSaveState('idle');
+                                                    }}
+                                                    rows={4}
+                                                    placeholder={t('Optional instructions that should apply to every AI request…')}
+                                                    className="w-full rounded-xl border border-border-subtle bg-bg-input px-3 py-2 text-xs text-text-primary placeholder:text-text-tertiary outline-none focus:border-accent-primary resize-y"
+                                                />
+                                            </div>
+
+                                            <div className="grid gap-3 md:grid-cols-2">
+                                                {[
+                                                    ['whatToAnswer', 'What to Answer'],
+                                                    ['clarify', 'Clarify'],
+                                                    ['followUp', 'Follow Up'],
+                                                    ['recap', 'Recap'],
+                                                    ['answer', 'Answer / Record'],
+                                                    ['codeHint', 'Get Code Hint'],
+                                                    ['brainstorm', 'Brainstorm Approaches'],
+                                                    ['followUpQuestions', 'Follow-up Questions'],
+                                                ].map(([key, label]) => (
+                                                    <label key={key} className="block">
+                                                        <span className="block text-xs font-medium text-text-secondary mb-1">{t(label)}</span>
+                                                        <textarea
+                                                            value={promptSettings.shortcutPrompts[key as ShortcutPromptKey] || ''}
+                                                            onChange={(event) => updateShortcutPrompt(key as ShortcutPromptKey, event.target.value)}
+                                                            rows={3}
+                                                            placeholder={t('Optional additional instruction…')}
+                                                            className="w-full rounded-xl border border-border-subtle bg-bg-input px-3 py-2 text-xs text-text-primary placeholder:text-text-tertiary outline-none focus:border-accent-primary resize-y"
+                                                        />
+                                                    </label>
+                                                ))}
+                                            </div>
+                                            {promptSaveState === 'saved' && <p className="text-xs text-emerald-400">{t('Prompt settings saved.')}</p>}
+                                            {promptSaveState === 'error' && <p className="text-xs text-red-400">{t('Prompt settings could not be saved.')}</p>}
                                         </div>
                                     </div>
                                 </div>

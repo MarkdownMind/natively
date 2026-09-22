@@ -2,6 +2,7 @@ import { LLMHelper } from "../LLMHelper";
 import { BRAINSTORM_MODE_PROMPT } from "./prompts";
 import { TINY_BRAINSTORM_PROMPT } from "./tinyPrompts";
 import { resolveV2SystemPrompt, v2TierForPromptTier } from "./promptSystemV2";
+import { appendShortcutPrompt } from './userPromptSettings';
 
 export class BrainstormLLM {
     private llmHelper: LLMHelper;
@@ -21,12 +22,13 @@ export class BrainstormLLM {
         const promptOverride = v3?.system
                 ?? resolveV2SystemPrompt({ action: 'brainstorm', tier: v2TierForPromptTier(this.llmHelper.getPromptTier()) })
                 ?? (this.llmHelper.getPromptTier() === 'tiny' ? TINY_BRAINSTORM_PROMPT : BRAINSTORM_MODE_PROMPT);
+            const promptWithUserInstruction = appendShortcutPrompt(promptOverride, 'brainstorm');
             const fittedContext = v3?.user ?? (context ? this.llmHelper.fitContextForCurrentModel(context) : context);
             // ignoreKnowledgeMode=true — see ClarifyLLM.generate() for the full
             // rationale: `context` here is the problem/transcript blob passed
             // directly as the user message, not a real question being asked of the
             // candidate, so it must not go through the knowledge-mode intent gate.
-            yield* this.llmHelper.streamChat(fittedContext, imagePaths, undefined, promptOverride, true,
+            yield* this.llmHelper.streamChat(fittedContext, imagePaths, undefined, promptWithUserInstruction, true,
                 Boolean(v3), [], undefined, undefined, v3 ? { v3Owned: true } : undefined);
         } catch (error) {
             console.error("[BrainstormLLM] Stream failed:", error);

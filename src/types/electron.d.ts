@@ -80,6 +80,15 @@ export type DirectAssistEvent =
   | { type: 'cancel'; requestId: string; sequence: number }
 
 export interface ElectronAPI {
+  getPromptSettings: () => Promise<{
+    systemPrompt: string
+    shortcutPrompts: Record<string, string>
+  }>
+  setPromptSettings: (settings: {
+    systemPrompt: string
+    shortcutPrompts: Record<string, string>
+  }) => Promise<{ success: boolean; error?: string; settings?: unknown }>
+  resetPromptSettings: () => Promise<{ success: boolean; error?: string; settings?: unknown }>
   updateContentDimensions: (dimensions: {
     width: number
     height: number

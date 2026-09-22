@@ -20,6 +20,7 @@ import { formatEnvelopeForPrompt } from './services/browser-context/formatEnvelo
 import { BrowserMetadataClassifierService } from './services/browser-context/BrowserMetadataClassifierService';
 import type { BrowserContextCategory, SafeWebsiteMetadata } from './services/browser-context/types';
 import { SettingsManager } from './services/SettingsManager';
+import { getUserPromptSettings, normalizePromptSettings } from './llm/userPromptSettings';
 import { RERANK_CANDIDATE_POOL, resolveRerankPoolSize } from './services/modes/rerankPool';
 import { buildRerankProbe } from './services/reranking/rerankProbe';
 import { ProviderStatusRegistry } from './services/ProviderStatusRegistry';
@@ -6533,6 +6534,26 @@ export function initializeIpcHandlers(appState: AppState): void {
     return { success: true };
   });
 
+  // Prompt controls intentionally layer on top of the built-in prompt contract.
+  // The renderer never receives provider credentials or the internal base prompt.
+  safeHandle('prompts:get-settings', async () => getUserPromptSettings());
+
+  safeHandle('prompts:set-settings', async (_, settings: unknown) => {
+    const normalized = normalizePromptSettings(settings);
+    const persisted = SettingsManager.getInstance().set('promptSettings', normalized);
+    return persisted
+      ? { success: true, settings: normalized }
+      : { success: false, error: 'settings_write_refused' };
+  });
+
+  safeHandle('prompts:reset', async () => {
+    const normalized = normalizePromptSettings(undefined);
+    const persisted = SettingsManager.getInstance().set('promptSettings', normalized);
+    return persisted
+      ? { success: true, settings: normalized }
+      : { success: false, error: 'settings_write_refused' };
+  });
+
   // DEV/TEST ONLY — gated by NATIVELY_DEBUG_HOTKEYS=1 inside KeybindManager.
   // Simulates the OS dropping a RegisterHotKey registration so a Windows tester
   // can confirm the hook-level swallow / shortcut-guard still fire the action.
@@ -11345,7 +11366,13 @@ export function initializeIpcHandlers(appState: AppState): void {
       // New ones take precedence if IDs conflict (though unlikely as UUIDs)
       const curlProviders = cm.getCurlProviders();
       const legacyProviders = cm.getCustomProviders() || [];
-      return [...curlProviders, ...legacyProviders];
+      // API keys are main-process secrets. The renderer only needs to know
+      // whether one exists so editing a provider can preserve it when the key
+      // field is left blank.
+      return [...curlProviders, ...legacyProviders].map((provider: any) => {
+        const { apiKey, ...safeProvider } = provider;
+        return { ...safeProvider, hasApiKey: Boolean(apiKey) };
+      });
     } catch (error: any) {
       console.error('Error getting custom providers:', error);
       return [];
@@ -11353,13 +11380,26 @@ export function initializeIpcHandlers(appState: AppState): void {
   });
 
   const validateCurlProviderPayload = (provider: unknown): { ok: true } | { ok: false; error: string } => {
-    if (
-      typeof provider !== 'object' ||
-      provider === null ||
-      typeof (provider as any).id !== 'string' ||
-      typeof (provider as any).name !== 'string' ||
-      typeof (provider as any).curlCommand !== 'string'
-    ) {
+    if (typeof provider !== 'object' || provider === null ||
+      typeof (provider as any).id !== 'string' || typeof (provider as any).name !== 'string') {
+      return { ok: false, error: 'Invalid provider payload' };
+    }
+
+    const candidate = provider as any;
+    if (candidate.transport === 'openai-compatible') {
+      if (typeof candidate.baseURL !== 'string' || !candidate.baseURL.trim()) {
+        return { ok: false, error: 'baseURL is required for an OpenAI-compatible provider' };
+      }
+      try {
+        const url = new URL(candidate.baseURL);
+        if (!['http:', 'https:'].includes(url.protocol)) throw new Error('unsupported protocol');
+      } catch {
+        return { ok: false, error: 'baseURL must be a valid http(s) URL' };
+      }
+      if (typeof candidate.model !== 'string' || !candidate.model.trim()) {
+        return { ok: false, error: 'model is required for an OpenAI-compatible provider' };
+      }
+    } else if (typeof candidate.curlCommand !== 'string') {
       return { ok: false, error: 'Invalid provider payload' };
     }
 
@@ -11368,7 +11408,7 @@ export function initializeIpcHandlers(appState: AppState): void {
     // at the IPC boundary. Taken from the shared policy rather than re-spelled:
     // this literal was the third copy, and the drift it caused is what the
     // module exists to prevent.
-    if (!TEXT_PLACEHOLDER_RE.test((provider as any).curlCommand)) {
+    if (candidate.transport !== 'openai-compatible' && !TEXT_PLACEHOLDER_RE.test(candidate.curlCommand)) {
       return { ok: false, error: 'curlCommand must contain {{TEXT}} placeholder for the prompt' };
     }
 
@@ -11391,7 +11431,17 @@ export function initializeIpcHandlers(appState: AppState): void {
       }
 
       const { CredentialsManager } = require('./services/CredentialsManager');
-      CredentialsManager.getInstance().saveCurlProvider(provider as any);
+      const cm = CredentialsManager.getInstance();
+      const incoming = { ...(provider as any) };
+      const existing = (cm.getCurlProviders() || []).find((saved: any) => saved.id === incoming.id);
+      // A blank key while editing means "keep the existing encrypted key".
+      // This lets the renderer stay secret-safe without making users re-enter
+      // credentials every time they tweak a model or endpoint.
+      if (incoming.transport === 'openai-compatible' && !incoming.apiKey && existing?.apiKey) {
+        incoming.apiKey = existing.apiKey;
+      }
+      delete incoming.hasApiKey;
+      cm.saveCurlProvider(incoming);
       await refreshRuntimeDefaultIfUnavailable();
       broadcastCredentialsChanged();
       return { success: true };

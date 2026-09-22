@@ -2,6 +2,7 @@ import { LLMHelper } from "../LLMHelper";
 import { CODE_HINT_PROMPT, buildCodeHintMessage } from "./prompts";
 import { TINY_CODE_HINT_PROMPT } from "./tinyPrompts";
 import { resolveV2SystemPrompt, v2TierForPromptTier } from "./promptSystemV2";
+import { appendShortcutPrompt } from './userPromptSettings';
 
 export class CodeHintLLM {
     private llmHelper: LLMHelper;
@@ -55,6 +56,7 @@ export class CodeHintLLM {
             const promptOverride = v3?.system
                 ?? resolveV2SystemPrompt({ action: 'code_hint', tier: v2TierForPromptTier(this.llmHelper.getPromptTier()) })
                 ?? (this.llmHelper.getPromptTier() === 'tiny' ? TINY_CODE_HINT_PROMPT : CODE_HINT_PROMPT);
+            const promptWithUserInstruction = appendShortcutPrompt(promptOverride, 'codeHint');
             // V3 composed the turn content too, evidence and all, so it must not
             // be re-fitted: fitContextForCurrentModel would truncate a governed
             // evidence block from the middle and leave a citation pointing at
@@ -65,7 +67,7 @@ export class CodeHintLLM {
                 fittedMessage,
                 imagePaths,
                 undefined,
-                promptOverride,
+                promptWithUserInstruction,
                 // Both flags are FALSE without v3, which is exactly what the four
                 // positional arguments defaulted to before, so the legacy path is
                 // byte-for-byte unchanged.
