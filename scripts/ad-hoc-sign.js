@@ -134,6 +134,51 @@ function verifyPackedNativeArch(appPath, targetArchName) {
     console.log(`[Arch Guard] All packed native binaries match target arch ${targetArchName} ✅`);
 }
 
+/**
+ * Remove platform binaries that cannot execute in this macOS pack. The npm
+ * package contains darwin arm64/x64 plus Linux and Windows ONNX binaries so a
+ * cross-platform install can resolve at runtime, but shipping all of them in
+ * one macOS app needlessly adds roughly 80 MB to the unpacked artifact.
+ *
+ * This runs only inside the generated app and only after electron-builder has
+ * selected the target architecture, so it cannot change the source install
+ * used for another build target.
+ */
+function pruneUnusedOnnxPlatformBinaries(appPath, targetArchName) {
+    if (targetArchName !== 'x64' && targetArchName !== 'arm64') return;
+
+    const napiRoot = path.join(
+        appPath,
+        'Contents',
+        'Resources',
+        'app.asar.unpacked',
+        'node_modules',
+        'onnxruntime-node',
+        'bin',
+        'napi-v6',
+    );
+    if (!fs.existsSync(napiRoot)) return;
+
+    const keepDarwinArch = targetArchName;
+    for (const platform of ['linux', 'win32']) {
+        const platformPath = path.join(napiRoot, platform);
+        if (fs.existsSync(platformPath)) {
+            fs.rmSync(platformPath, { recursive: true, force: true });
+            console.log(`[Pack Prune] Removed onnxruntime-node ${platform} binaries`);
+        }
+    }
+
+    const darwinRoot = path.join(napiRoot, 'darwin');
+    for (const arch of ['x64', 'arm64']) {
+        if (arch === keepDarwinArch) continue;
+        const archPath = path.join(darwinRoot, arch);
+        if (fs.existsSync(archPath)) {
+            fs.rmSync(archPath, { recursive: true, force: true });
+            console.log(`[Pack Prune] Removed onnxruntime-node darwin/${arch} binaries`);
+        }
+    }
+}
+
 // ─── Helper Disguise Configuration ───
 // Display name used for helper processes in Activity Monitor
 const DISGUISE_BASE = 'CoreServices';
@@ -192,6 +237,10 @@ exports.default = async function (context) {
     const appOutDir = context.appOutDir;
     const appName = context.packager.appInfo.productFilename;
     const appPath = path.join(appOutDir, `${appName}.app`);
+
+    // Remove known cross-platform payloads before arch verification and
+    // signing. The guard below still confirms the target native modules.
+    pruneUnusedOnnxPlatformBinaries(appPath, ebArchToName(context.arch));
 
     // ── Step 0: Verify packed native binaries match the target arch ──
     // MUST run before signing and before any early return (signed path returns

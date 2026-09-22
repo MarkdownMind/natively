@@ -132,7 +132,6 @@
       "dist-electron",
       "native-module",
       "package.json",
-      "node_modules",
       "!**/native-module/target",
       "!**/native-module/src",
       "!**/native-module/.cargo",
@@ -140,6 +139,8 @@
       "!**/.env.*",
       "!**/*.log",
       "!**/*.pdf",
+      "!**/*.map",
+      "!**/*.d.ts",
       "!**/.git",
       "!**/node_modules/@typescript/**"
     ],

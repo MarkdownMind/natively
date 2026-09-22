@@ -6954,7 +6954,7 @@ let isMultimodal = !!(imagePaths?.length);
           const curl = this.activeCurlProvider;
           providers.unshift({
             name: `cURL Provider (${curl.name})`,
-            execute: () => this.streamWithDirectCurl(curl, userContent, openaiSystemPrompt || UNIVERSAL_SYSTEM_PROMPT, imagePaths, abortSignal),
+            execute: () => this.streamWithDirectCurl(curl, userContent, openaiSystemPrompt || UNIVERSAL_SYSTEM_PROMPT, imagePaths ?? [], abortSignal),
           });
         }
       }

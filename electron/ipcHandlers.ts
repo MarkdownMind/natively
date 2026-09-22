@@ -6556,7 +6556,7 @@ export function initializeIpcHandlers(appState: AppState): void {
     const persisted = SettingsManager.getInstance().set('promptSettings', normalized);
     return persisted
       ? { success: true, settings: normalized }
-      : { success: false, error: 'settings_write_refused' };
+      : { success: false, error: 'settings_store_degraded' };
   });
 
   safeHandle('prompts:reset', async () => {
@@ -6564,7 +6564,7 @@ export function initializeIpcHandlers(appState: AppState): void {
     const persisted = SettingsManager.getInstance().set('promptSettings', normalized);
     return persisted
       ? { success: true, settings: normalized }
-      : { success: false, error: 'settings_write_refused' };
+      : { success: false, error: 'settings_store_degraded' };
   });
 
   // DEV/TEST ONLY — gated by NATIVELY_DEBUG_HOTKEYS=1 inside KeybindManager.
@@ -11418,6 +11418,13 @@ export function initializeIpcHandlers(appState: AppState): void {
     }
 
     const candidate = provider as any;
+    // Legacy cURL providers must carry a command template. OpenAI-compatible
+    // providers intentionally use baseURL/model instead, so their curlCommand
+    // field is not required.
+    if (candidate.transport !== 'openai-compatible' && typeof (provider as any).curlCommand !== 'string') {
+      return { ok: false, error: 'Invalid provider payload' };
+    }
+
     if (candidate.transport === 'openai-compatible') {
       if (typeof candidate.baseURL !== 'string' || !candidate.baseURL.trim()) {
         return { ok: false, error: 'baseURL is required for an OpenAI-compatible provider' };
@@ -11431,8 +11438,6 @@ export function initializeIpcHandlers(appState: AppState): void {
       if (typeof candidate.model !== 'string' || !candidate.model.trim()) {
         return { ok: false, error: 'model is required for an OpenAI-compatible provider' };
       }
-    } else if (typeof candidate.curlCommand !== 'string') {
-      return { ok: false, error: 'Invalid provider payload' };
     }
 
     // Spacing tolerated, matching deepVariableReplacer and both validateCurl
@@ -11440,7 +11445,10 @@ export function initializeIpcHandlers(appState: AppState): void {
     // at the IPC boundary. Taken from the shared policy rather than re-spelled:
     // this literal was the third copy, and the drift it caused is what the
     // module exists to prevent.
-    if (candidate.transport !== 'openai-compatible' && !TEXT_PLACEHOLDER_RE.test(candidate.curlCommand)) {
+    const curlCommand = (provider as any).curlCommand;
+    const hasTextPlaceholder = typeof curlCommand === 'string' &&
+      (curlCommand.includes('{{TEXT}}') || TEXT_PLACEHOLDER_RE.test(curlCommand));
+    if (candidate.transport !== 'openai-compatible' && !hasTextPlaceholder) {
       return { ok: false, error: 'curlCommand must contain {{TEXT}} placeholder for the prompt' };
     }
 
@@ -11473,7 +11481,11 @@ export function initializeIpcHandlers(appState: AppState): void {
         incoming.apiKey = existing.apiKey;
       }
       delete incoming.hasApiKey;
-      cm.saveCurlProvider(incoming);
+      // The IPC payload is a structured clone owned by this handler. Copy the
+      // normalized secret-preserving shape back onto it so the shared save
+      // path receives the validated provider object, not an unvalidated alias.
+      Object.assign(provider as any, incoming);
+      cm.saveCurlProvider(provider as any);
       await refreshRuntimeDefaultIfUnavailable();
       broadcastCredentialsChanged();
       return { success: true };
