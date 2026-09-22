@@ -38,7 +38,7 @@ export interface VisionProviderBuildInputs {
  *   vision_first / vision_only: Natively → OpenAI → Gemini Flash-Lite →
  *                                Gemini Flash → Claude → Gemini Pro → Groq Scout
  *                                → LiteLLM → NVIDIA NIM → Ollama → Codex → Custom
- *   private_vision: Ollama → Codex → local Custom only
+ *   private_vision: Ollama → local Custom only
  */
 export function buildVisionProviders(inputs: VisionProviderBuildInputs): VisionProviderConfig[] {
   const credentials = CredentialsManager.getInstance();
@@ -78,7 +78,9 @@ export function buildVisionProviders(inputs: VisionProviderBuildInputs): VisionP
     providers.push(ninerouter(credentials, inputs));
   }
 
-  // Local providers — always allowed, including in private_vision.
+  // Local providers — always allowed, including in private_vision. Codex is
+  // listed here for ordering, but isLocal:false keeps the cloud-backed
+  // ChatGPT transport out of private_vision.
   providers.push(ollama(credentials, inputs));
   providers.push(codex(credentials, inputs));
   providers.push(custom(credentials, inputs));
@@ -215,36 +217,24 @@ function ollama(creds: CredentialsManager, _inputs: VisionProviderBuildInputs): 
 }
 
 function codex(creds: CredentialsManager, _inputs: VisionProviderBuildInputs): VisionProviderConfig {
-  const cliPath = (creds.getAllCredentials() as any)?.codexCliPath as string | undefined;
-  // Codex CLI vision capability is not yet verified across builds — we configure
-  // the provider as available but the vision flag is conservative. See ROADMAP.
-  //
-  // SAFETY — READ BEFORE FLIPPING `supportsVision` TO TRUE.
-  // `isLocal: true` below is a ROUTING hint (no API key, runs via a local CLI
-  // binary), NOT a statement about where the pixels go. Codex CLI sends to
-  // chatgpt.com/backend-api/codex/responses — it is a CLOUD vision provider.
-  //
-  // VisionProviderFallbackChain implements `private_vision` as "skip every
-  // provider where isLocal !== true", so the moment `supportsVision` becomes
-  // true this entry becomes a private_vision-eligible CLOUD destination, and
-  // the Settings copy "Use a local vision model (Ollama) only. Cloud vision is
-  // never called." becomes false on the one screenshot path that is wired.
-  //
-  // This is inert TODAY only because `supportsVision: false` and `invoke`
-  // throws. If you enable CLI vision, you MUST also set `isLocal: false` (or
-  // give the chain a separate `isOnDevice` predicate). Note
-  // electron/llm/visionPolicy.ts deliberately does NOT share this predicate —
-  // its `isLocalVisionProvider()` is Ollama-only for exactly this reason.
+  // CodexCliService already encodes screenshots as Responses API input_image
+  // items. Keep its availability check in LLMHelper so this registry cannot
+  // advertise a disabled or signed-out ChatGPT transport.
+  const helper = getActiveLLMHelperSync();
+  const configured = Boolean(helper?.isCodexVisionAvailable?.());
+  const configuredModel = helper?.getCodexCliConfig?.()?.model;
   return {
     id: 'codex_cli',
     displayName: 'Codex CLI',
-    modelId: (creds.getAllCredentials() as any)?.codexCliModel,
-    isLocal: true,
-    isConfigured: !!cliPath,
-    supportsVision: false, // unverified; see SAFETY above before flipping — also set isLocal:false
+    modelId: configuredModel || (creds.getAllCredentials() as any)?.codexCliModel,
+    // This is a local executable backed by a cloud Responses endpoint. It must
+    // never be eligible for private_vision, even though it needs no API key.
+    isLocal: false,
+    isConfigured: configured,
+    supportsVision: configured,
     scopeAllowsScreenshots: true,
     hint: 'codex',
-    invoke: async () => { throw new Error('Codex CLI vision unverified — capability disabled'); },
+    invoke: async (p) => callLLMHelperVision('codex_cli', p),
   };
 }
 
@@ -548,4 +538,14 @@ async function getActiveLLMHelper(): Promise<any | null> {
     }
   }
   return null;
+}
+
+function getActiveLLMHelperSync(): any | null {
+  const g = global as any;
+  if (typeof g.__nativelyGetLLMHelper !== 'function') return null;
+  try {
+    return g.__nativelyGetLLMHelper() || null;
+  } catch {
+    return null;
+  }
 }

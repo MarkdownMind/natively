@@ -267,8 +267,8 @@
     "publish": [
       {
         "provider": "github",
-        "owner": "Natively-AI-assistant",
-        "repo": "natively-cluely-ai-assistant",
+        "owner": "MarkdownMind",
+        "repo": "natively",
         "releaseType": "release"
       }
     ],

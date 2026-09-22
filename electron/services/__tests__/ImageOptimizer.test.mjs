@@ -97,6 +97,21 @@ test('cache hit returns same OptimizedImage for same key', async () => {
   await optimizer.cleanupAll();
 });
 
+test('a cache entry whose output disappeared is re-encoded', async () => {
+  const Optimizer = await loadOptimizer();
+  const optimizer = new Optimizer();
+  const src = await ensureBigPng();
+
+  const first = await optimizer.optimize(src, { profile: 'balanced', provider: 'openai', cacheKey: 'stale-cache' });
+  await fs.unlink(first.path);
+
+  const second = await optimizer.optimize(src, { profile: 'balanced', provider: 'openai', cacheKey: 'stale-cache' });
+  assert.equal(second.cacheHit, false, 'a missing cached file cannot be reported as a cache hit');
+  assert.notEqual(second.path, first.path);
+
+  await optimizer.cleanupAll();
+});
+
 test('different profile invalidates cache', async () => {
   const Optimizer = await loadOptimizer();
   const optimizer = new Optimizer();

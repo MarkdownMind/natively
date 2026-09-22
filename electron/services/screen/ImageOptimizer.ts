@@ -148,11 +148,24 @@ export class ImageOptimizer {
     const format = opts.format ?? tuned.format;
     const quality = opts.quality ?? tuned.quality;
     const maxBytes = opts.maxBytes ?? DEFAULT_MAX_BYTES;
-    const cacheKey = opts.cacheKey ? `${opts.cacheKey}|${profile}|${provider}|${maxLongEdgePx}|${format}|${quality}` : undefined;
+    // maxBytes is part of the cache identity. Reusing an image produced for a
+    // looser limit would violate the caller's body-size contract and was easy
+    // to hit when a provider-specific limit changed between attempts.
+    const cacheKey = opts.cacheKey ? `${opts.cacheKey}|${profile}|${provider}|${maxLongEdgePx}|${format}|${quality}|${maxBytes}` : undefined;
 
-    if (cacheKey && this.cache.has(cacheKey)) {
-      const cached = this.cache.get(cacheKey)!;
-      return { ...cached, cacheHit: true };
+    if (cacheKey) {
+      const cached = this.cache.get(cacheKey);
+      if (cached && await this.fileExists(cached.path)) {
+        return { ...cached, cacheHit: true };
+      }
+      if (cached) {
+        // A temp sweep or an external cleanup may remove an owned file while
+        // the in-memory entry survives. Never return a dead path: discard the
+        // stale entry and let this call re-encode from the source.
+        this.cache.delete(cacheKey);
+        this.ownedFiles.delete(cacheKey);
+        this.outputsByPath.delete(path.resolve(cached.path));
+      }
     }
 
     // Re-encoding our OWN output is a second lossy pass over pixels that were

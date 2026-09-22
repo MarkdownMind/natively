@@ -8,18 +8,9 @@
 // (VisionProviderFallbackChain.ts:222):
 //     if (params.mode === 'private_vision' && !provider.isLocal) -> skip
 //
-// The Codex registry entry sets `isLocal: true` — a ROUTING hint meaning "no API
-// key, runs through a local CLI binary". But Codex CLI sends to
-// chatgpt.com/backend-api/codex/responses. It is a CLOUD vision provider.
-//
-// Today that is inert because `supportsVision: false` and `invoke` throws. The
-// entry's own comment says "flip to true when CLI vision is confirmed end-to-end"
-// — and doing ONLY that, without also setting `isLocal: false`, silently makes
-// the promise above false on the one screenshot path that is actually wired.
-//
-// These tests fail the moment that happens. They are deliberately written
-// against the CONDITION (vision-capable AND marked local), not against the
-// current literal values, so they stay meaningful after the flip.
+// Codex CLI sends image requests to chatgpt.com/backend-api/codex/responses. It
+// is therefore a cloud-backed vision provider even though the executable is
+// installed locally. The registry must keep that distinction explicit.
 
 import { test, describe } from 'node:test';
 import assert from 'node:assert/strict';
@@ -73,13 +64,15 @@ describe('Codex is never treated as an on-device vision provider', () => {
     );
   });
 
-  test('the SAFETY note survives — the flip must not be made without reading it', () => {
+  test('the enabled Codex vision entry remains cloud-only and wired', () => {
     const src = require('node:fs').readFileSync(
       path.join(__dirname, '../screen/VisionProviderRegistry.ts'), 'utf8',
     );
-    assert.match(
-      src, /SAFETY — READ BEFORE FLIPPING/,
-      'the Codex isLocal/supportsVision hazard note was removed; restore it or replace this guard',
-    );
+    const start = src.indexOf("id: 'codex_cli'");
+    assert.ok(start > 0, 'could not locate the codex_cli registry entry — update this guard');
+    const entry = src.slice(start, src.indexOf('};', start));
+    assert.match(entry, /isLocal:\s*false/, 'Codex images go to chatgpt.com, so the registry must mark it cloud-backed');
+    assert.match(entry, /supportsVision:\s*configured/, 'the implemented Responses API image path must be enabled when Codex is available');
+    assert.match(entry, /callLLMHelperVision\('codex_cli'/, 'the registry must invoke the implemented Codex image adapter');
   });
 });

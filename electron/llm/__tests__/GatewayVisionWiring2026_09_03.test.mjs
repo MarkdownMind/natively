@@ -164,6 +164,16 @@ describe('buildOpenAiImageParts — the single image-part builder', () => {
     assert.ok(parts[1].image_url.url.startsWith('data:image/jpeg'));
   });
 
+  test('when every attached file fails preparation, it throws instead of sending text-only', async () => {
+    const goneA = path.join(tmp, 'gone-a.png');
+    const goneB = path.join(tmp, 'gone-b.png');
+    await assert.rejects(
+      () => call('buildOpenAiImageParts', withStubbedProcessImage(), [goneA, goneB]),
+      /could not prepare/i,
+      'an image turn must not silently become a text-only turn when all attachments fail',
+    );
+  });
+
   test('every part goes through processImage, so the bytes are compressed', async () => {
     // The size fix and the type fix are the same call site: routing through
     // processImage is what bounds a 1491 KB raw screenshot to ~293 KB.

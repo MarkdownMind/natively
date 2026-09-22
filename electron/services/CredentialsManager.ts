@@ -1411,12 +1411,23 @@ export class CredentialsManager {
         // getAllCustomProviders() stays the right accessor for questions about
         // what EXISTS; this is a question about what can run.
         if (customProviderSupportsVision(readActiveCustomProvider())) return true;
+        // Codex is a cloud-backed ChatGPT transport even though the app talks
+        // to it through a local executable. Count it for general vision
+        // availability, but never from anyLocalVisionProviderConfigured().
+        try {
+            const helper = (globalThis as any).__nativelyGetLLMHelper?.();
+            if (helper?.isCodexVisionAvailable?.()) return true;
+        } catch {
+            // Credential/provider discovery is fail-open; the registry will
+            // make the final provider decision when the helper is ready.
+        }
         return this.anyLocalVisionProviderConfigured();
     }
 
     /**
-     * True if at least one LOCAL vision provider is configured (Ollama vision model,
-     * Codex CLI with vision support, or a local-only custom provider).
+     * True if at least one LOCAL vision provider is configured (Ollama vision model
+     * or a local-only custom provider). Codex CLI is intentionally excluded: its
+     * executable is local, but its image request is sent to chatgpt.com.
      * Used by private_vision mode to enforce no cloud-vision calls.
      */
     public anyLocalVisionProviderConfigured(): boolean {
@@ -1424,9 +1435,6 @@ export class CredentialsManager {
         // Here we only assert the runtime is configured — model gating happens in the chain.
         const ollamaBaseUrl = (this.credentials as any).ollamaBaseUrl as string | undefined;
         if (ollamaBaseUrl && ollamaBaseUrl.trim().length > 0) return true;
-        // Codex CLI is local in normal install — capability is verified by ProviderRouter.
-        const codexCliPath = (this.credentials as any).codexCliPath as string | undefined;
-        if (codexCliPath && codexCliPath.trim().length > 0) return true;
         // A local-only custom endpoint (LM Studio, llama.cpp, an Ollama gateway
         // on 127.0.0.1 or the LAN). The docstring above has always promised
         // this branch; it did not exist, so private_vision refused for a user

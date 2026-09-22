@@ -10,7 +10,7 @@
 //   node scripts/verify-packaged-local-assets.mjs                       (source mode)
 //     verifies the repo tree before packaging.
 //
-//   node scripts/verify-packaged-local-assets.mjs --app <path-to-.app|unpacked> [--platform darwin|win32]
+//   node scripts/verify-packaged-local-assets.mjs --app <path-to-.app|unpacked> [--platform darwin|win32] [--arch arm64|x64]
 //     verifies the GENERATED package contents. Platform is auto-detected from
 //     the artifact's own directory layout (Contents/Resources vs resources/);
 //     --platform is only needed for an already-unpacked --dir output that has
@@ -26,6 +26,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { execFileSync } from 'node:child_process';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const repoRoot = path.resolve(__dirname, '..');
@@ -121,15 +122,18 @@ const REQUIRED_UNPACKED_NATIVE_COMMON = [
   'node_modules/better-sqlite3/build/Release/better_sqlite3.node',
   'node_modules/keytar/build/Release/keytar.node',
 ];
-const REQUIRED_UNPACKED_NATIVE_DARWIN = [
+const REQUIRED_UNPACKED_NATIVE_DARWIN_ARM64 = [
   'node_modules/onnxruntime-node/bin/napi-v6/darwin',
   'node_modules/@img/sharp-darwin-arm64/lib',
   'node_modules/@img/sharp-libvips-darwin-arm64/lib',
+  'node_modules/sqlite-vec-darwin-arm64/vec0.dylib',
+  'native-module/index.darwin-arm64.node',
+];
+const REQUIRED_UNPACKED_NATIVE_DARWIN_X64 = [
+  'node_modules/onnxruntime-node/bin/napi-v6/darwin',
   'node_modules/@img/sharp-darwin-x64/lib',
   'node_modules/@img/sharp-libvips-darwin-x64/lib',
-  'node_modules/sqlite-vec-darwin-arm64/vec0.dylib',
   'node_modules/sqlite-vec-darwin-x64/vec0.dylib',
-  'native-module/index.darwin-arm64.node',
   'native-module/index.darwin-x64.node',
 ];
 // Windows entries are UNVERIFIED against a real packaged artifact — this repo
@@ -216,7 +220,21 @@ function resolveResourcesDir(appArg) {
   return { resources: macResources, platform: 'darwin' };
 }
 
-function verifyPackaged(appArg, platformArg) {
+function detectDarwinArch(resources) {
+  const contentsDir = path.dirname(resources);
+  const executable = path.join(contentsDir, 'MacOS', 'Natively');
+  if (!exists(executable)) return null;
+  try {
+    const description = execFileSync('file', ['-b', executable], { encoding: 'utf8' });
+    if (/arm64|aarch64/i.test(description)) return 'arm64';
+    if (/x86_64|x86-64|intel/i.test(description)) return 'x64';
+  } catch {
+    // An unpacked artifact may not have the macOS `file` utility available.
+  }
+  return null;
+}
+
+function verifyPackaged(appArg, platformArg, archArg) {
   console.log('[verify-packaged-local-assets] packaged mode:', appArg);
   const { resources, platform: detectedPlatform } = resolveResourcesDir(appArg);
   if (!exists(resources)) {
@@ -235,6 +253,14 @@ function verifyPackaged(appArg, platformArg) {
     return;
   }
   console.log('[verify-packaged-local-assets] target platform:', platform);
+  const arch = platform === 'darwin'
+    ? (archArg || detectDarwinArch(resources))
+    : archArg;
+  if (platform === 'darwin' && arch !== 'arm64' && arch !== 'x64') {
+    errors.push(`Could not determine macOS architecture for ${appArg} — pass --arch arm64|x64 explicitly.`);
+  } else if (arch) {
+    console.log('[verify-packaged-local-assets] target arch:', arch);
+  }
 
   const modelsRoot = path.join(resources, 'models');
   for (const rel of REQUIRED_MODEL_FILES) checkFile(modelsRoot, rel, 'packaged model file');
@@ -245,7 +271,9 @@ function verifyPackaged(appArg, platformArg) {
   }
 
   // Native binaries & modules that must be present in the packaged app.
-  const platformNative = platform === 'darwin' ? REQUIRED_UNPACKED_NATIVE_DARWIN : REQUIRED_UNPACKED_NATIVE_WIN32;
+  const platformNative = platform === 'darwin'
+    ? (arch === 'x64' ? REQUIRED_UNPACKED_NATIVE_DARWIN_X64 : REQUIRED_UNPACKED_NATIVE_DARWIN_ARM64)
+    : REQUIRED_UNPACKED_NATIVE_WIN32;
   for (const rel of [...REQUIRED_UNPACKED_NATIVE_COMMON, ...platformNative]) {
     checkAny(unpacked, [rel], `unpacked native asset ${rel}`);
   }
@@ -285,9 +313,11 @@ function verifyPackaged(appArg, platformArg) {
 
 const appIdx = process.argv.indexOf('--app');
 const platformIdx = process.argv.indexOf('--platform');
+const archIdx = process.argv.indexOf('--arch');
 const platformArg = platformIdx !== -1 ? process.argv[platformIdx + 1] : undefined;
+const archArg = archIdx !== -1 ? process.argv[archIdx + 1] : undefined;
 if (appIdx !== -1 && process.argv[appIdx + 1]) {
-  verifyPackaged(process.argv[appIdx + 1], platformArg);
+  verifyPackaged(process.argv[appIdx + 1], platformArg, archArg);
 } else {
   verifySource();
 }

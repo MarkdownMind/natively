@@ -1969,7 +1969,7 @@ export class LLMHelper {
   // these named entry points so the surface stays auditable.
 
   public async runVisionRequest(
-    providerId: 'natively' | 'openai' | 'claude' | 'gemini_flash_lite' | 'gemini_flash' | 'gemini_pro' | 'groq_scout' | 'custom' | 'litellm' | 'nvidia_nim' | 'openrouter' | 'fluxion' | 'ninerouter',
+    providerId: 'natively' | 'openai' | 'claude' | 'gemini_flash_lite' | 'gemini_flash' | 'gemini_pro' | 'groq_scout' | 'codex_cli' | 'custom' | 'litellm' | 'nvidia_nim' | 'openrouter' | 'fluxion' | 'ninerouter',
     userPrompt: string,
     systemPrompt: string,
     imagePath: string,
@@ -1995,6 +1995,15 @@ export class LLMHelper {
         return this.generateWithClaude(userPrompt, systemPrompt, [imagePath]);
       case 'groq_scout':
         return this.generateWithGroqMultimodal(userPrompt, [imagePath], systemPrompt);
+      case 'codex_cli':
+        return this.generateWithCodexCli(
+          userPrompt,
+          systemPrompt,
+          false,
+          [imagePath],
+          opts?.signal,
+          opts?.timeoutMs,
+        );
       // OpenAI-compatible gateways. Registered here so ScreenUnderstandingService
       // has a rung to call when a proxy is the user's only configured provider —
       // it had none, and reported "no vision provider" instead.
@@ -2011,15 +2020,13 @@ export class LLMHelper {
       case 'gemini_flash_lite':
       case 'gemini_flash':
       case 'gemini_pro': {
-        const fs = await import('node:fs/promises');
-        const b64 = await fs.readFile(imagePath, 'base64');
-        // Derived, not assumed: ImageOptimizer's format is a per-profile setting
-        // (its type already admits webp), so a literal here is a header that can
-        // contradict the bytes — the same defect fixed in buildOpenAiImageParts.
-        const { imageMimeTypeFromPath } = require('./utils/curlUtils') as typeof import('./utils/curlUtils');
+        // Keep the one-shot Gemini route on the same resize, byte-limit, and MIME
+        // validation path as every other adapter. Reading raw bytes here used to
+        // bypass compression and could declare a type from the filename only.
+        const { mimeType, data: b64 } = await this.processImage(imagePath);
         const contents: any[] = [
           { text: `${systemPrompt}\n\n${userPrompt}` },
-          { inlineData: { mimeType: imageMimeTypeFromPath(imagePath), data: b64 } },
+          { inlineData: { mimeType, data: b64 } },
         ];
         const modelId = providerId === 'gemini_flash_lite'
           ? GEMINI_FLASH_LITE_MODEL
@@ -2103,6 +2110,15 @@ export class LLMHelper {
 
   public getCodexCliConfig(): CodexCliConfig {
     return this.codexCliConfig;
+  }
+
+  /**
+   * Availability seam for the vision registry. Codex runs through
+   * chatgpt.com/backend-api, so this is deliberately separate from the
+   * on-device provider checks used by private_vision.
+   */
+  public isCodexVisionAvailable(): boolean {
+    return this.isCodexAvailable();
   }
 
   public getAiResponseLanguage(): string {
@@ -2793,7 +2809,7 @@ export class LLMHelper {
     return this.codexCliConfig.model;
   }
 
-  private async generateWithCodexCli(userContent: string, systemPrompt?: string, fastMode = false, imagePaths?: string[], signal?: AbortSignal): Promise<string> {
+  private async generateWithCodexCli(userContent: string, systemPrompt?: string, fastMode = false, imagePaths?: string[], signal?: AbortSignal, timeoutMsOverride?: number): Promise<string> {
     if (!this.isCodexAvailable()) throw new Error('Codex CLI transport is disabled or ChatGPT is signed out.');
     // Codex routes to chatgpt.com/backend-api — it is a CLOUD provider, and it
     // needs the same local-only last boundary every other cloud provider has.
@@ -2822,7 +2838,7 @@ export class LLMHelper {
       prompt: userContent,
       instructions: systemPrompt,
       model,
-      timeoutMs: this.codexCliConfig.timeoutMs,
+      timeoutMs: timeoutMsOverride ?? this.codexCliConfig.timeoutMs,
       imagePaths,
       sandboxMode: this.codexCliConfig.sandboxMode,
       serviceTier: this.codexCliConfig.serviceTier,
@@ -2951,12 +2967,13 @@ export class LLMHelper {
         const encoded: string[] = [];
         for (const path of imagePaths) {
           try {
-            const imageData = await fs.promises.readFile(path);
-            encoded.push(imageData.toString("base64"));
+            const prepared = await this.processImage(path);
+            encoded.push(prepared.data);
           } catch (e) {
-            console.warn("[LLMHelper] callOllama: failed to read image, skipping:", path, e);
+            console.warn("[LLMHelper] callOllama: failed to prepare image, skipping:", path, e);
           }
         }
+        this.assertPreparedImages(imagePaths, encoded.length, 'Ollama');
         if (encoded.length > 0) images = encoded;
       }
 
@@ -3506,7 +3523,7 @@ ${IMAGE_TRUST_TRAILER}`;
    * NEW: Helper to process image: resize to max 1536px and compress to JPEG 80%
    * drastically reduces token usage and upload time.
    */
-  private async processImage(path: string): Promise<{ mimeType: string, data: string }> {
+  private async processImage(path: string, options?: { maxRawBytes?: number }): Promise<{ mimeType: string, data: string }> {
     try {
       const imageBuffer = await fs.promises.readFile(path);
 
@@ -3535,10 +3552,25 @@ ${IMAGE_TRUST_TRAILER}`;
       // those hands the upstream a header that contradicts the bytes.
       const { imageMimeTypeFromPath } = require('./utils/curlUtils') as typeof import('./utils/curlUtils');
       const data = await fs.promises.readFile(path);
+      // A failed Sharp decode is not permission to ship an unbounded or empty
+      // file. Sending those bytes makes the provider answer text-only or reject
+      // the whole request, which is much harder to diagnose than a provider
+      // failure that the fallback chain can classify.
+      const MAX_RAW_IMAGE_BYTES = options?.maxRawBytes ?? 3.5 * 1024 * 1024;
+      const MIN_RAW_IMAGE_BYTES = 32;
+      if (data.length < MIN_RAW_IMAGE_BYTES || data.length > MAX_RAW_IMAGE_BYTES) {
+        throw new Error(`Image could not be prepared for vision (${data.length} bytes)`);
+      }
       return {
         mimeType: imageMimeTypeFromPath(path),
         data: data.toString("base64")
       };
+    }
+  }
+
+  private assertPreparedImages(requested: readonly string[] | undefined, prepared: number, provider: string): void {
+    if (requested?.length && prepared === 0) {
+      throw new Error(`${provider} could not prepare any attached image for vision`);
     }
   }
 
@@ -3573,6 +3605,7 @@ ${IMAGE_TRUST_TRAILER}`;
       const { mimeType, data } = await this.processImage(p);
       parts.push({ type: 'image_url', image_url: { url: `data:${mimeType};base64,${data}` } });
     }
+    this.assertPreparedImages(imagePaths, parts.length, 'OpenAI-compatible provider');
     return parts;
   }
 
@@ -5176,32 +5209,18 @@ let isMultimodal = !!(imagePaths?.length);
     // Send images as a structured array so the server can build proper Gemini inlineData parts.
     // Embedding base64 in the text content would be truncated at 4000 chars and treated as text.
     //
-    // Compress before sending: retina screenshots are 2-5 MB PNG; the Natively API body limit
-    // is 4 MB. Resize to max 1920px (above the 1470px logical resolution of a MacBook Air, so
-    // no detail is lost) and encode as JPEG 85% — typically 200-250 KB per image.
-    // 4 screenshots × ~278KB base64 = ~1.1 MB, well within the 4 MB server limit.
+    // Compress before sending through the shared image preparation path. This
+    // keeps MIME, decode validation, and the raw fallback bound consistent with
+    // the other cloud adapters.
     if (imagePaths?.length) {
       const images: { mime_type: string; data: string }[] = [];
       for (const p of imagePaths) {
         if (fs.existsSync(p)) {
-          try {
-            const compressed = await sharp(p)
-              .resize(1920, 1920, { fit: 'inside', withoutEnlargement: true })
-              .jpeg({ quality: 85 })
-              .toBuffer();
-            images.push({ mime_type: 'image/jpeg', data: compressed.toString('base64') });
-          } catch (compressErr: any) {
-            // Fallback: send raw if sharp fails (e.g. unsupported format)
-            console.warn('[LLMHelper] Image compression failed, sending raw:', compressErr.message);
-            const imageData = await fs.promises.readFile(p);
-            if (imageData.length > 500 * 1024) {
-              console.warn('[LLMHelper] Raw fallback image too large to send, skipping:', p);
-              continue;
-            }
-            images.push({ mime_type: 'image/png', data: imageData.toString('base64') });
-          }
+          const prepared = await this.processImage(p, { maxRawBytes: 500 * 1024 });
+          images.push({ mime_type: prepared.mimeType, data: prepared.data });
         }
       }
+      this.assertPreparedImages(imagePaths, images.length, 'Natively API');
       if (images.length) body.images = images;
     }
     if (systemPrompt) body.system = systemPrompt;
@@ -5358,6 +5377,7 @@ let isMultimodal = !!(imagePaths?.length);
           contentParts.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${data}` } });
         }
       }
+      this.assertPreparedImages(imagePaths, contentParts.length - 1, 'OpenAI');
       messages.push({ role: "user", content: contentParts });
     } else {
       messages.push({ role: "user", content: userMessage });
@@ -5688,6 +5708,7 @@ let isMultimodal = !!(imagePaths?.length);
         }
       }
     }
+    this.assertPreparedImages(imagePaths, content.length, 'Fluxion Anthropic');
     content.push({ type: 'text', text: userMessage });
     return content;
   }
@@ -5840,6 +5861,10 @@ let isMultimodal = !!(imagePaths?.length);
       }
     }
 
+    if (imagePath && !base64Image) {
+      throw new Error('Custom provider could not prepare the attached image for vision');
+    }
+
     // 3. Prepare Variables
     // We combine System Prompt + User Message into {{TEXT}} for simplicity in raw mode.
     const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${userMessage}` : userMessage;
@@ -5975,6 +6000,7 @@ let isMultimodal = !!(imagePaths?.length);
         }
       }
     }
+    this.assertPreparedImages(imagePaths, content.length, 'Claude');
     content.push({ type: "text", text: userMessage });
 
     // Use streaming under the hood and accumulate the final message. The Anthropic SDK
@@ -6078,6 +6104,10 @@ let isMultimodal = !!(imagePaths?.length);
           console.warn("Failed to read image for Custom Provider:", e2);
         }
       }
+    }
+
+    if (imagePath && !base64Image) {
+      throw new Error('cURL provider could not prepare the attached image for vision');
     }
 
     // 3. Prepare Variables
@@ -6311,6 +6341,7 @@ let isMultimodal = !!(imagePaths?.length);
           });
         }
       }
+      this.assertPreparedImages(imagePaths, contents.length - 1, 'Gemini');
 
       // Use current model for multimodal (allows Pro fallback)
       if (this.client) {
@@ -6356,6 +6387,7 @@ let isMultimodal = !!(imagePaths?.length);
         contentParts.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${data}` } });
       }
     }
+    this.assertPreparedImages(imagePaths, contentParts.length - 1, 'Groq');
     messages.push({ role: "user", content: contentParts });
 
     const request = {
@@ -6461,6 +6493,7 @@ let isMultimodal = !!(imagePaths?.length);
                     contents.push({ inlineData: { mimeType, data } });
                   }
                 }
+                this.assertPreparedImages(imagePaths, contents.length - 1, 'Gemini');
                 return await this.generateContent(contents, modelId);
               }
             };
@@ -6490,6 +6523,7 @@ let isMultimodal = !!(imagePaths?.length);
                     contents.push({ inlineData: { mimeType, data } });
                   }
                 }
+                this.assertPreparedImages(imagePaths, contents.length - 1, 'Gemini');
                 return await this.generateContent(contents, modelId);
               }
             };
@@ -9766,41 +9800,28 @@ let isMultimodal = !!(imagePaths?.length);
       body.language = this.aiResponseLanguage;
     }
 
-    // Attach images — compress before sending (same as non-streaming generateWithNatively).
-    // Retina screenshots are 2-5 MB PNG; the Natively API body limit is 4 MB.
-    // Resize to max 1920px and encode as JPEG 85% — typically 200-250 KB per image.
-    // 4 screenshots × ~278KB base64 = ~1.1 MB, well within the 4 MB server limit.
+    // Attach images through the same preparation path as non-streaming Natively
+    // and the other adapters. This prevents the streaming path from declaring a
+    // raw fallback as PNG when the bytes are another format.
     if (imagePaths?.length) {
       const images: { mime_type: string; data: string }[] = [];
       for (const p of imagePaths) {
         if (fs.existsSync(p)) {
           try {
-            const compressed = await sharp(p)
-              .resize(1920, 1920, { fit: 'inside', withoutEnlargement: true })
-              .jpeg({ quality: 85 })
-              .toBuffer();
-            images.push({ mime_type: 'image/jpeg', data: compressed.toString('base64') });
-          } catch (compressErr: any) {
-            // Fallback: send raw if sharp fails (e.g. unsupported format)
-            console.warn(
-              '[LLMHelper] streamWithNatively: image compression failed, sending raw:',
-              directMode ? '[details omitted]' : compressErr.message,
-            );
-            const imageData = await fs.promises.readFile(p);
-            if (imageData.length > 500 * 1024) {
-              if (directMode) {
-                throw new DirectAssistError('INVALID_ATTACHMENT', 'The image attachment could not be prepared for the selected provider.');
-              }
-              console.warn('[LLMHelper] streamWithNatively: raw fallback image too large, skipping:', directMode ? '[path omitted]' : p);
-              continue;
+            const prepared = await this.processImage(p, { maxRawBytes: 500 * 1024 });
+            images.push({ mime_type: prepared.mimeType, data: prepared.data });
+          } catch (prepareErr: any) {
+            if (directMode) {
+              throw new DirectAssistError('INVALID_ATTACHMENT', 'The image attachment could not be prepared for the selected provider.');
             }
-            images.push({ mime_type: 'image/png', data: imageData.toString('base64') });
+            throw prepareErr;
           }
         } else if (directMode) {
           throw new DirectAssistError('INVALID_ATTACHMENT', 'The image attachment is no longer available.');
         }
       }
-      if (images.length) body.images = images;
+      this.assertPreparedImages(imagePaths, images.length, 'Natively API');
+      body.images = images;
     }
 
     // WIDEN-ONLY. Returns `connectTimeoutMs` unchanged unless this network has
@@ -10230,6 +10251,7 @@ let isMultimodal = !!(imagePaths?.length);
         contentParts.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${data}` } });
       }
     }
+    this.assertPreparedImages(imagePaths, contentParts.length - 1, 'Groq');
     messages.push({ role: "user", content: contentParts });
 
     if (abortSignal?.aborted) return;
@@ -10593,6 +10615,7 @@ let isMultimodal = !!(imagePaths?.length);
         contentParts.push({ type: "image_url", image_url: { url: `data:${mimeType};base64,${data}` } });
       }
     }
+    this.assertPreparedImages(imagePaths, contentParts.length - 1, 'OpenAI');
     messages.push({ role: "user", content: contentParts });
 
     const cacheKey = this.getOpenAiPromptCacheKey(systemPrompt);
@@ -10647,6 +10670,7 @@ let isMultimodal = !!(imagePaths?.length);
         });
       }
     }
+    this.assertPreparedImages(imagePaths, imageContentParts.length, 'Claude');
 
     if (abortSignal?.aborted) return;
     const request = {
@@ -10720,6 +10744,7 @@ let isMultimodal = !!(imagePaths?.length);
         }
       }
     }
+    this.assertPreparedImages(imagePaths, contents.length - 1, 'Gemini');
 
     // Gated stage timing (MEASURE_LATENCY=true) — isolates the cache-create
     // round-trip and provider TTFT, the prime suspects for slow first token.
@@ -10922,15 +10947,16 @@ let isMultimodal = !!(imagePaths?.length);
       const encoded: string[] = [];
       for (const p of imagePaths) {
         try {
-          const data = await fs.promises.readFile(p);
-          encoded.push(data.toString("base64"));
+          const prepared = await this.processImage(p);
+          encoded.push(prepared.data);
         } catch (e) {
           if (strictErrors) {
-            throw new DirectAssistError('INVALID_ATTACHMENT', 'The image attachment could not be read.');
+            throw new DirectAssistError('INVALID_ATTACHMENT', 'The image attachment could not be prepared.');
           }
-          console.warn("[LLMHelper] streamWithOllama: failed to read image, skipping:", p, e);
+          console.warn("[LLMHelper] streamWithOllama: failed to prepare image, skipping:", p, e);
         }
       }
+      this.assertPreparedImages(imagePaths, encoded.length, 'Ollama');
       if (encoded.length) images = encoded;
     }
 
@@ -11236,6 +11262,13 @@ let isMultimodal = !!(imagePaths?.length);
           /* keep empty for legacy callers */
         }
       }
+    }
+
+    if (imagePaths?.length && !base64Image) {
+      if (strictErrors) {
+        throw new DirectAssistError('INVALID_ATTACHMENT', 'The image attachment could not be prepared for the selected provider.');
+      }
+      throw new Error('Custom provider could not prepare the attached image for vision');
     }
 
     const combinedMessage = context ? `${context}\n\n${message}` : message;

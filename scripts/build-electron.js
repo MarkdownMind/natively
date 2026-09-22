@@ -20,6 +20,11 @@ const { build, context } = require('esbuild');
 // long time anyway. Type-checking in watch mode is `tsc --noEmit --watch`.
 const WATCH = process.argv.includes('--watch');
 const SOURCE_MAPS = process.env.NATIVELY_ELECTRON_SOURCEMAP === '1';
+// esbuild keeps all entry-point parse state alive for one large multi-entry
+// build. With several hundred runtime files that can exceed 8 GB even though
+// each emitted file is small. Serial batches keep peak build memory bounded;
+// bundle:false still preserves the same directory-shaped output.
+const BUILD_BATCH_SIZE = Math.max(1, Number(process.env.NATIVELY_ELECTRON_BUILD_BATCH_SIZE) || 32);
 // Fork pull requests cannot receive the repository secret needed to fetch the
 // private premium submodule. This opt-in mode still transpiles every core
 // Electron entrypoint, but leaves private runtime imports unresolved for the
@@ -203,8 +208,13 @@ if (WATCH) {
   if (CORE_SMOKE) {
     console.log('[build-electron] Core smoke mode: private premium imports remain unresolved');
   }
-  build(buildOptions).then(() => {
+  (async () => {
+    for (let offset = 0; offset < entryPoints.length; offset += BUILD_BATCH_SIZE) {
+      const batch = entryPoints.slice(offset, offset + BUILD_BATCH_SIZE);
+      await build({ ...buildOptions, entryPoints: batch });
+      console.log(`[build-electron] batch ${Math.min(offset + batch.length, entryPoints.length)}/${entryPoints.length}`);
+    }
     copyAssets();
     console.log(`[build-electron] Done in ${Date.now() - start}ms`);
-  }).catch(onFailure);
+  })().catch(onFailure);
 }

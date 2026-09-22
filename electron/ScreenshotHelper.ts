@@ -7,6 +7,7 @@ import { v4 as uuidv4 } from "uuid"
 import util from "util"
 import sharp from "sharp"
 import { exec as execShell } from "child_process"
+import { imageMimeTypeFromPath } from "./utils/curlUtils"
 
 // Module-level: promisified shell exec created once per process lifetime.
 // Uses the shell-capable exec variant (not execFile) because Linux screenshot
@@ -856,9 +857,9 @@ export class ScreenshotHelper {
    * The model is NEVER fed this string: every send path passes the file PATH
    * (`currentAttachments.map(s => s.path)`), so downscaling here costs no answer
    * quality. Bounded long edge + JPEG, matching ImageOptimizer's conventions.
-   * If sharp is unavailable (packaged-build native-module edge cases), falls
-   * back to the original full-resolution encoding rather than losing the
-   * preview.
+   * If sharp cannot decode a file, only a small bounded raw preview is allowed;
+   * a multi-megabyte fallback data URL would recreate the long-session renderer
+   * heap growth this method exists to prevent.
    */
   public async getImagePreview(filepath: string): Promise<string> {
     const maxRetries = 20
@@ -888,8 +889,12 @@ export class ScreenshotHelper {
                 .toBuffer()
               return `data:image/jpeg;base64,${thumb.toString("base64")}`
             } catch (thumbErr: any) {
-              console.warn('[ScreenshotHelper] preview downscale unavailable, using full-resolution preview:', thumbErr?.message)
-              return `data:image/png;base64,${data.toString("base64")}`
+              console.warn('[ScreenshotHelper] preview downscale unavailable, using bounded raw preview:', thumbErr?.message)
+              const MAX_RAW_PREVIEW_BYTES = 1 * 1024 * 1024
+              if (data.length > MAX_RAW_PREVIEW_BYTES) {
+                throw new Error(`Preview image is too large to display without downscaling (${data.length} bytes)`)
+              }
+              return `data:${imageMimeTypeFromPath(filepath)};base64,${data.toString("base64")}`
             }
           }
         }
