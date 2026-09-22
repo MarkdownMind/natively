@@ -101,6 +101,23 @@ test('current request detects and preserves C++ over stale explicit language', a
   assert.equal(correctedPlainText.request.requestedFormat, 'plain text');
 });
 
+test('prompt settings replace the complete Direct Assist system prompt', async () => {
+  const { prepareDirectAssistPrompt, DIRECT_ASSIST_SYSTEM_PROMPT } = await loadDirectAssist();
+  const global = prepareDirectAssistPrompt(baseInput({ userSystemPrompt: 'GLOBAL_SYSTEM_ONLY' }));
+  assert.equal(global.systemPrompt, 'GLOBAL_SYSTEM_ONLY');
+  assert.ok(!global.systemPrompt.includes(DIRECT_ASSIST_SYSTEM_PROMPT));
+
+  const shortcut = prepareDirectAssistPrompt(baseInput({
+    userSystemPrompt: 'GLOBAL_SYSTEM_ONLY',
+    shortcutPrompt: 'SHORTCUT_SYSTEM_ONLY',
+  }));
+  assert.equal(shortcut.systemPrompt, 'SHORTCUT_SYSTEM_ONLY');
+  assert.doesNotMatch(shortcut.systemPrompt, /<shortcut_prompt>|<user_system_prompt>/);
+
+  const builtIn = prepareDirectAssistPrompt(baseInput());
+  assert.equal(builtIn.systemPrompt, DIRECT_ASSIST_SYSTEM_PROMPT);
+});
+
 test('current screenshot request outranks an irrelevant meeting transcript', async () => {
   const { prepareDirectAssistPrompt } = await loadDirectAssist();
   const current = 'Solve the attached problem and return C++ code.';

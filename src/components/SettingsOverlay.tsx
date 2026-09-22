@@ -3293,7 +3293,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({
                                                 <div>
                                                     <h4 className="text-sm font-bold text-text-primary">{t('Prompt settings')}</h4>
                                                     <p className="text-xs text-text-secondary mt-1">
-                                                        {t('Edit the system prompt and the prompt sent by each action. Your text is added after Natively’s built-in safety and context rules.')}
+                                                        {t('Edit the complete system prompt and complete prompt for each action. A saved prompt replaces Natively’s built-in prompt; it is not appended.')}
                                                     </p>
                                                 </div>
                                                 <div className="flex items-center gap-2 shrink-0">
@@ -3325,7 +3325,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({
                                                         setPromptSaveState('idle');
                                                     }}
                                                     rows={4}
-                                                    placeholder={t('Text added to every AI request…')}
+                                                    placeholder={t('Complete system prompt sent with every AI request…')}
                                                     className="w-full rounded-xl border border-border-subtle bg-bg-input px-3 py-2 text-xs text-text-primary placeholder:text-text-tertiary outline-none focus:border-accent-primary resize-y"
                                                 />
                                             </div>
@@ -3349,7 +3349,7 @@ const SettingsOverlay: React.FC<SettingsOverlayProps> = ({
                                                             value={promptSettings.shortcutPrompts[key as ShortcutPromptKey] || ''}
                                                             onChange={(event) => updateShortcutPrompt(key as ShortcutPromptKey, event.target.value)}
                                                             rows={3}
-                                                            placeholder={t('Optional additional instruction…')}
+                                                            placeholder={t('Complete prompt for this action…')}
                                                             className="w-full rounded-xl border border-border-subtle bg-bg-input px-3 py-2 text-xs text-text-primary placeholder:text-text-tertiary outline-none focus:border-accent-primary resize-y"
                                                         />
                                                     </label>

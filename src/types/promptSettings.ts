@@ -14,9 +14,9 @@ export const SHORTCUT_PROMPT_KEYS = [
 export type ShortcutPromptKey = (typeof SHORTCUT_PROMPT_KEYS)[number];
 
 export interface PromptSettings {
-  /** Additional system instructions appended to Natively's built-in rules. */
+  /** Complete system prompt override. When set, it replaces the built-in system prompt. */
   systemPrompt: string;
-  /** Additional instructions appended to the selected shortcut's built-in prompt. */
+  /** Complete prompt override for the selected shortcut. When set, it replaces that action's built-in prompt. */
   shortcutPrompts: Partial<Record<ShortcutPromptKey, string>>;
 }
 

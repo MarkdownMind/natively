@@ -75,7 +75,8 @@ test('action prompt settings cover Answer and both screenshot submission paths',
   assert.match(renderer, /handleWhatToSay\(undefined, 'captureAndProcess'\)/);
   assert.match(renderer, /shortcutPromptKey: 'answer'/);
   assert.match(renderer, /shortcutPromptKey: 'answer' \}/);
-  assert.match(ipc, /appendShortcutPrompt\(context, options\.shortcutPromptKey as ShortcutPromptKey\)/);
-  assert.match(directAssistBuilder, /<user_system_prompt>/);
-  assert.match(directAssistBuilder, /<shortcut_prompt>/);
+  assert.doesNotMatch(ipc, /appendShortcutPrompt\(context, options\.shortcutPromptKey as ShortcutPromptKey\)/);
+  assert.match(ipc, /resolveShortcutPrompt\(composed\.system, options\.shortcutPromptKey as ShortcutPromptKey\)/);
+  assert.match(directAssistBuilder, /const systemPrompt = request\.shortcutPrompt\?\.trim\(\)/);
+  assert.doesNotMatch(directAssistBuilder, /<user_system_prompt>|<shortcut_prompt>/);
 });

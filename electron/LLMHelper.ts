@@ -64,7 +64,7 @@ import { applyCurlVariables, buildOpenAICompatibleCurl, getByPath, injectImageIn
 import { getImageOptimizer } from './services/screen/ImageOptimizer';
 import curl2Json from "@bany/curl-to-json";
 import { CustomProvider, CurlProvider } from './services/CredentialsManager';
-import { appendSystemPromptOverride } from './llm/userPromptSettings';
+import { resolveSystemPrompt } from './llm/userPromptSettings';
 import { TRIAL_SENTINEL_KEY } from './config/constants';
 import { exec } from 'child_process';
 import { promisify } from 'util';
@@ -4355,7 +4355,7 @@ if (!shouldSkipModeInjection) {
     // The non-streaming/manual chat path has its own prompt assembly, so apply
     // the same user system layer before it fans out to provider-specific
     // system prompts.
-    if (systemPromptOverride) systemPromptOverride = appendSystemPromptOverride(systemPromptOverride);
+    if (systemPromptOverride) systemPromptOverride = resolveSystemPrompt(systemPromptOverride);
 
     if (modeContextBlock) {
       const existingLen = context?.length ?? 0;
@@ -8393,7 +8393,7 @@ let isMultimodal = !!(imagePaths?.length);
         // Apply the user-authored system layer before local-only routing. The
         // helper is idempotent, so the final prompt boundary below can safely
         // cover calls that did not carry an override through this block.
-        if (systemPromptOverride) systemPromptOverride = appendSystemPromptOverride(systemPromptOverride);
+        if (systemPromptOverride) systemPromptOverride = resolveSystemPrompt(systemPromptOverride);
 
         if (isActiveCustomMode) {
           console.log('[LLMHelper] Active custom mode injection', {
@@ -8535,7 +8535,7 @@ let isMultimodal = !!(imagePaths?.length);
 
     // Determine the system prompt to use
     // logic: if override provided, use it. otherwise use HARD_SYSTEM_PROMPT (which is the universal base)
-    let baseSystemPrompt = appendSystemPromptOverride(systemPromptOverride || HARD_SYSTEM_PROMPT);
+    let baseSystemPrompt = resolveSystemPrompt(systemPromptOverride || HARD_SYSTEM_PROMPT);
     // Document-grounded custom mode (audit 2026-06-28, weak-model real-path
     // fix): append the greeting-suppression + answer-directly override at the
     // SOURCE. This runs INSIDE streamChat so it applies on EVERY entry point

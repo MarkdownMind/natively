@@ -932,19 +932,17 @@ export function prepareDirectAssistPrompt(input: DirectAssistRequestInput | Dire
     );
   }
 
-  const systemPromptLayers = [
-    DIRECT_ASSIST_SYSTEM_PROMPT,
-    request.userSystemPrompt
-      ? `<user_system_prompt>\n${request.userSystemPrompt}\n</user_system_prompt>`
-      : '',
-    request.shortcutPrompt
-      ? `<shortcut_prompt>\n${request.shortcutPrompt}\n</shortcut_prompt>`
-      : '',
-  ].filter(Boolean).join('\n\n');
+  // Prompt settings are complete replacements, not instruction layers. A
+  // shortcut is more specific than the global system prompt, so it wins when
+  // both are configured; otherwise the global prompt wins over the built-in
+  // Direct Assist prompt.
+  const systemPrompt = request.shortcutPrompt?.trim()
+    || request.userSystemPrompt?.trim()
+    || DIRECT_ASSIST_SYSTEM_PROMPT;
 
   return Object.freeze({
     request,
-    systemPrompt: systemPromptLayers,
+    systemPrompt,
     userPrompt,
     imagePaths: request.imagePaths,
     // Off the SURVIVING history, not request.history: the loop above may have

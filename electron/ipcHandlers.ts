@@ -20,7 +20,7 @@ import { formatEnvelopeForPrompt } from './services/browser-context/formatEnvelo
 import { BrowserMetadataClassifierService } from './services/browser-context/BrowserMetadataClassifierService';
 import type { BrowserContextCategory, SafeWebsiteMetadata } from './services/browser-context/types';
 import { SettingsManager } from './services/SettingsManager';
-import { appendShortcutPrompt, getUserPromptSettings, normalizePromptSettings } from './llm/userPromptSettings';
+import { getUserPromptSettings, normalizePromptSettings, resolveShortcutPrompt } from './llm/userPromptSettings';
 import { SHORTCUT_PROMPT_KEYS, type ShortcutPromptKey } from '../src/types/promptSettings';
 import { RERANK_CANDIDATE_POOL, resolveRerankPoolSize } from './services/modes/rerankPool';
 import { buildRerankProbe } from './services/reranking/rerankProbe';
@@ -1312,17 +1312,6 @@ export function initializeIpcHandlers(appState: AppState): void {
       try {
         const llmHelper = appState.processingHelper.getLLMHelper();
 
-        // Keep action-specific prompt settings on the main-process side. The
-        // renderer selects the action; the saved prompt text is resolved here
-        // and appended to the caller-owned prompt before provider routing.
-        if (
-          context
-          && typeof options?.shortcutPromptKey === 'string'
-          && SHORTCUT_PROMPT_KEYS.includes(options.shortcutPromptKey as ShortcutPromptKey)
-        ) {
-          context = appendShortcutPrompt(context, options.shortcutPromptKey as ShortcutPromptKey);
-        }
-
         const senderId = event.sender.id;
         const myStreamId = ++_chatStreamId;
         const priorStream = _chatStreamsBySender.get(senderId);
@@ -1914,7 +1903,13 @@ export function initializeIpcHandlers(appState: AppState): void {
             // the antecedent for the NEXT turn's referent resolution.
             // Bug 003: V3 owns this turn end to end, so if the skill block is not
             // appended here it is injected nowhere at all.
-            const v3SystemPrompt = skillPromptBlock ? `${composed.system}\n\n## ACTIVE SKILL\n${skillPromptBlock}` : composed.system;
+            const configuredV3SystemPrompt = typeof options?.shortcutPromptKey === 'string'
+              && SHORTCUT_PROMPT_KEYS.includes(options.shortcutPromptKey as ShortcutPromptKey)
+              ? resolveShortcutPrompt(composed.system, options.shortcutPromptKey as ShortcutPromptKey)
+              : composed.system;
+            const v3SystemPrompt = skillPromptBlock
+              ? `${configuredV3SystemPrompt}\n\n## ACTIVE SKILL\n${skillPromptBlock}`
+              : configuredV3SystemPrompt;
             const v3Stream = llmHelper.streamChatWithOutcome(
               composed.user,
               imagePaths,
@@ -6547,8 +6542,8 @@ export function initializeIpcHandlers(appState: AppState): void {
     return { success: true };
   });
 
-  // Prompt controls intentionally layer on top of the built-in prompt contract.
-  // The renderer never receives provider credentials or the internal base prompt.
+  // Prompt controls are complete user-owned prompt replacements. The renderer
+  // never receives provider credentials or the internal compiled prompts.
   safeHandle('prompts:get-settings', async () => getUserPromptSettings());
 
   safeHandle('prompts:set-settings', async (_, settings: unknown) => {

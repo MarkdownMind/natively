@@ -2,7 +2,7 @@ import { LLMHelper } from "../LLMHelper";
 import { UNIVERSAL_FOLLOW_UP_QUESTIONS_PROMPT } from "./prompts";
 import { TINY_FOLLOW_UP_QUESTIONS_PROMPT } from "./tinyPrompts";
 import { resolveV2SystemPrompt, v2TierForPromptTier } from "./promptSystemV2";
-import { appendShortcutPrompt } from './userPromptSettings';
+import { resolveShortcutPrompt } from './userPromptSettings';
 
 export class FollowUpQuestionsLLM {
     private llmHelper: LLMHelper;
@@ -12,7 +12,7 @@ export class FollowUpQuestionsLLM {
     }
 
     private resolvePrompt(): string {
-        return appendShortcutPrompt(
+        return resolveShortcutPrompt(
             resolveV2SystemPrompt({ action: 'follow_up_questions', tier: v2TierForPromptTier(this.llmHelper.getPromptTier()) })
                 ?? (this.llmHelper.getPromptTier() === 'tiny' ? TINY_FOLLOW_UP_QUESTIONS_PROMPT : UNIVERSAL_FOLLOW_UP_QUESTIONS_PROMPT),
             'followUpQuestions',

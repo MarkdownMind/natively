@@ -2,7 +2,7 @@ import { LLMHelper } from "../LLMHelper";
 import { UNIVERSAL_RECAP_PROMPT } from "./prompts";
 import { TINY_RECAP_PROMPT } from "./tinyPrompts";
 import { resolveV2SystemPrompt, v2TierForPromptTier } from "./promptSystemV2";
-import { appendShortcutPrompt } from './userPromptSettings';
+import { resolveShortcutPrompt } from './userPromptSettings';
 
 export class RecapLLM {
     private llmHelper: LLMHelper;
@@ -19,7 +19,7 @@ export class RecapLLM {
         try {
             const promptOverride = resolveV2SystemPrompt({ action: 'recap', tier: v2TierForPromptTier(this.llmHelper.getPromptTier()) })
                 ?? (this.llmHelper.getPromptTier() === 'tiny' ? TINY_RECAP_PROMPT : UNIVERSAL_RECAP_PROMPT);
-            const promptWithUserInstruction = appendShortcutPrompt(promptOverride, 'recap');
+            const promptWithUserInstruction = resolveShortcutPrompt(promptOverride, 'recap');
             const fittedContext = this.llmHelper.fitContextForCurrentModel(context);
             // ignoreKnowledgeMode=true — see ClarifyLLM.generate() for the full
             // rationale: `context` is a conversation-context blob, not a real
@@ -50,7 +50,7 @@ export class RecapLLM {
             if (options?.contractRule) {
                 promptOverride = `${promptOverride}\n\n${options.contractRule}`;
             }
-            const promptWithUserInstruction = appendShortcutPrompt(promptOverride, 'recap');
+            const promptWithUserInstruction = resolveShortcutPrompt(promptOverride, 'recap');
             const fittedContext = this.llmHelper.fitContextForCurrentModel(context);
             // See generate() above — ignoreKnowledgeMode=true.
             yield* this.llmHelper.streamChat(fittedContext, undefined, undefined, promptWithUserInstruction, true);

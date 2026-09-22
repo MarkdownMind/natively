@@ -7,7 +7,6 @@ import {
 } from '../../src/types/promptSettings';
 
 const MAX_PROMPT_CHARS = 8_000;
-const SYSTEM_PROMPT_MARKER = '<user_system_instructions>';
 
 function clampPrompt(value: unknown): string {
   return typeof value === 'string' ? value.trim().slice(0, MAX_PROMPT_CHARS) : '';
@@ -39,19 +38,26 @@ export function getUserPromptSettings(): PromptSettings {
   }
 }
 
-export function appendShortcutPrompt(basePrompt: string, key: ShortcutPromptKey): string {
-  const custom = getUserPromptSettings().shortcutPrompts[key];
-  if (!custom) return basePrompt;
-  return `${basePrompt}\n\n<shortcut_instruction name="${key}">\n${custom}\n</shortcut_instruction>`;
+/**
+ * Resolve the complete prompt for one action. A configured action prompt is
+ * authoritative: it replaces the compiled-in action prompt byte-for-byte.
+ */
+export function resolveShortcutPrompt(basePrompt: string, key: ShortcutPromptKey): string {
+  return getUserPromptSettings().shortcutPrompts[key] || basePrompt;
 }
 
 /**
- * Keep Natively's built-in safety/context contract intact and append the user's
- * instructions as a clearly delimited layer. This makes the setting useful
- * without allowing an accidental blank/partial edit to delete core behavior.
+ * Resolve the complete global system prompt. A configured system prompt is
+ * authoritative: it replaces the compiled-in system prompt instead of being
+ * appended to it.
+ *
+ * A shortcut prompt is more specific than the global prompt. Preserve it when
+ * both settings are present so editing one shortcut does not silently replace
+ * it with the global setting.
  */
-export function appendSystemPromptOverride(basePrompt: string): string {
-  const custom = getUserPromptSettings().systemPrompt;
-  if (!custom || basePrompt.includes(SYSTEM_PROMPT_MARKER)) return basePrompt;
-  return `${basePrompt}\n\n${SYSTEM_PROMPT_MARKER}\n${custom}\n</user_system_instructions>`;
+export function resolveSystemPrompt(basePrompt: string): string {
+  const settings = getUserPromptSettings();
+  const configuredShortcutPrompts = Object.values(settings.shortcutPrompts);
+  if (configuredShortcutPrompts.includes(basePrompt)) return basePrompt;
+  return settings.systemPrompt || basePrompt;
 }

@@ -2,7 +2,7 @@ import { LLMHelper } from "../LLMHelper";
 import { CLARIFY_MODE_PROMPT } from "./prompts";
 import { TINY_CLARIFY_PROMPT } from "./tinyPrompts";
 import { resolveV2SystemPrompt, v2TierForPromptTier } from "./promptSystemV2";
-import { appendShortcutPrompt } from './userPromptSettings';
+import { resolveShortcutPrompt } from './userPromptSettings';
 
 export class ClarifyLLM {
     private llmHelper: LLMHelper;
@@ -21,7 +21,7 @@ export class ClarifyLLM {
         const promptOverride = v3?.system
                 ?? resolveV2SystemPrompt({ action: 'clarify', tier: v2TierForPromptTier(this.llmHelper.getPromptTier()) })
                 ?? (this.llmHelper.getPromptTier() === 'tiny' ? TINY_CLARIFY_PROMPT : CLARIFY_MODE_PROMPT);
-            const promptWithUserInstruction = appendShortcutPrompt(promptOverride, 'clarify');
+            const promptWithUserInstruction = resolveShortcutPrompt(promptOverride, 'clarify');
             const fittedContext = v3?.user ?? this.llmHelper.fitContextForCurrentModel(context);
             // ignoreKnowledgeMode=true: `context` is an internal conversation-context
             // blob (recent manual Q&A / transcript window), NOT a real question being
@@ -54,7 +54,7 @@ export class ClarifyLLM {
             const promptOverride = v3?.system
                 ?? resolveV2SystemPrompt({ action: 'clarify', tier: v2TierForPromptTier(this.llmHelper.getPromptTier()) })
                 ?? (this.llmHelper.getPromptTier() === 'tiny' ? TINY_CLARIFY_PROMPT : CLARIFY_MODE_PROMPT);
-            const promptWithUserInstruction = appendShortcutPrompt(promptOverride, 'clarify');
+            const promptWithUserInstruction = resolveShortcutPrompt(promptOverride, 'clarify');
             const fittedContext = v3?.user ?? this.llmHelper.fitContextForCurrentModel(context);
             // See generate() above — ignoreKnowledgeMode=true prevents the context
             // blob from being misclassified by the knowledge-mode intent gate.

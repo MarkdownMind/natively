@@ -6,7 +6,7 @@ import { resolveCodingPromptSignals } from "./codingPromptSignals";
 import type { AnswerPlan } from "./AnswerPlanner";
 import { isCodeVerificationEnabled } from "./codeVerification/verificationEnabled";
 import { resolveV2SystemPrompt, v2TierForPromptTier } from "./promptSystemV2";
-import { appendShortcutPrompt } from './userPromptSettings';
+import { resolveShortcutPrompt } from './userPromptSettings';
 
 export class AnswerLLM {
     private llmHelper: LLMHelper;
@@ -31,7 +31,7 @@ export class AnswerLLM {
             const promptOverride = systemPromptOverride
                 ?? resolveV2SystemPrompt({ action: 'answer', tier: v2TierForPromptTier(this.llmHelper.getPromptTier()), ...resolveCodingPromptSignals({ answerType: answerPlan?.answerType, question: answerPlan?.question || question }) })
                 ?? (this.llmHelper.getPromptTier() === 'tiny' ? TINY_ANSWER_PROMPT : UNIVERSAL_ANSWER_PROMPT);
-            const promptWithUserInstruction = appendShortcutPrompt(promptOverride, 'answer');
+            const promptWithUserInstruction = resolveShortcutPrompt(promptOverride, 'answer');
             const answerContract = answerPlan ? `\n\n${formatAnswerPlanForPrompt(answerPlan, isCodeVerificationEnabled())}` : '';
             const fittedContext = context ? this.llmHelper.fitContextForCurrentModel(`${context}${answerContract}`) : answerContract.trim() || context;
             // A V3-composed turn (systemPromptOverride supplied) owns its prompt

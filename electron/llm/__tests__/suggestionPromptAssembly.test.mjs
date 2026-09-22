@@ -77,7 +77,7 @@ test('WhatToAnswerLLM does not append active mode context to system prompt overr
   // `activeSkill ? ... : modePromptSuffix ? ...` ternary on top, so we match the
   // mode-suffix branch rather than pinning the exact head of the expression.
   assert.match(whatToAnswerSource, /## ACTIVE MODE\\n\$\{modePromptSuffix\}/);
-  assert.match(whatToAnswerSource, /const finalPromptOverride = activeSkill/);
+  assert.match(whatToAnswerSource, /const finalPromptOverride = resolveShortcutPrompt\(activeSkill/);
   // The retrieved mode CONTEXT block must never be concatenated into the system
   // prompt override — it travels as untrusted user content via the PromptAssembler.
   assert.doesNotMatch(whatToAnswerSource, /activeModePromptParts = \[modePromptSuffix, modeContextBlock\]/);

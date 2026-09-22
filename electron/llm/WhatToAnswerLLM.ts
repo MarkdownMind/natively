@@ -25,7 +25,7 @@ import type { ActiveModeDocumentGroundingInfo } from "../services/ModesManager";
 import type { ModeRetrievalOptions } from "../services/ModeContextRetriever";
 import { isCodeVerificationEnabled } from "./codeVerification/verificationEnabled";
 import type { WhatToAnswerRequestSnapshot } from "./whatToAnswerRequestSnapshot";
-import { appendShortcutPrompt } from './userPromptSettings';
+import { resolveShortcutPrompt } from './userPromptSettings';
 import type { ShortcutPromptKey } from '../../src/types/promptSettings';
 
 // Wall-clock budget for the pre-stream mode-context HYBRID retrieval await.
@@ -798,7 +798,7 @@ The user triggered this action with a coding problem on screen and NO new questi
                     ? TINY_WHAT_TO_ANSWER_PROMPT
                     : UNIVERSAL_WHAT_TO_ANSWER_PROMPT);
 
-            const finalPromptOverride = appendShortcutPrompt(activeSkill
+            const finalPromptOverride = resolveShortcutPrompt(activeSkill
                 ? `${basePrompt}\n\n## ACTIVE SKILL\n${activeSkill.promptBlock}`
                 : (modePromptSuffix && !v2BasePrompt)
                     ? `${basePrompt}\n\n## ACTIVE MODE\n${modePromptSuffix}`
@@ -1125,7 +1125,11 @@ The user triggered this action with a coding problem on screen and NO new questi
             // PR #429 Bug 003: `_v3p?.system ?? finalPromptOverride` discarded the
             // ACTIVE SKILL block on every V3 turn — finalPromptOverride is its only
             // carrier and V3 is default ON, so `??` never fell through.
-            const _wtaSystemPrompt = composeWtaSystemPrompt(_v3p?.system, finalPromptOverride, activeSkill);
+            const _wtaSystemPrompt = composeWtaSystemPrompt(
+                _v3p ? resolveShortcutPrompt(_v3p.system, shortcutPromptKey ?? 'whatToAnswer') : undefined,
+                finalPromptOverride,
+                activeSkill,
+            );
             if (_v3p) console.log('[WhatToAnswerLLM] V3 prompt in effect (Phase 6 wiring)');
             // INSTRUMENTATION FIX (session C forensics, 2026-08-21): the
             // prompt_assembled trace above describes the V1 packet, which is
