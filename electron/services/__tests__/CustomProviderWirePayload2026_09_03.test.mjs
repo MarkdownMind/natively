@@ -403,6 +403,19 @@ describe('the vision gates count the ACTIVE custom provider, not every saved one
       + 'so the gates must not claim one is available');
   });
 
+  test('reads the active legacy cURL provider when the custom slot is empty', () => {
+    const curl = { id: 'curl-1', name: 'legacy curl', curlCommand: 'curl https://example.com' };
+    assert.equal(withActive(null, () => {
+      const g = globalThis;
+      const previous = g.__nativelyGetLLMHelper;
+      g.__nativelyGetLLMHelper = () => ({
+        getActiveCustomProvider: () => null,
+        getActiveCurlProvider: () => curl,
+      });
+      try { return readActiveCustomProvider()?.id; } finally { g.__nativelyGetLLMHelper = previous; }
+    }), 'curl-1');
+  });
+
   test('and null when no helper is up at all', () => {
     const g = globalThis;
     const prev = g.__nativelyGetLLMHelper;

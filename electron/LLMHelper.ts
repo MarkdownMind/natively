@@ -43,6 +43,7 @@ import {
   ollamaVisionFromShow,
   resolveOllamaVision,
   customProviderSupportsVision,
+  customProviderUsesExplicitImagePlaceholder,
   customProviderIsLocal,
 } from "./llm/visionCapability"
 import { assertProviderDataScopes, getDeniedDataScopes, routeWithScopeFallback, ProviderRouter, DOCUMENT_GROUNDING_SCOPE_DENIED_MESSAGE, isProviderFamilyDisabled, ProviderDisabledError, type ProviderDataScope, type ProviderDataScopePolicy } from "./llm/ProviderRouter"
@@ -59,7 +60,7 @@ import { resolveVisionPolicy, readScreenUnderstandingMode, isLocalVisionProvider
 import { profileInterceptAllowedByRoute, modeAnswerType, type StreamRouteOptions } from "./llm/streamContextPolicy"
 import type { ActiveModeDocumentGroundingInfo } from "./services/ModesManager"
 import type { TranscriptTurn } from "./llm/transcriptCleaner"
-import { applyCurlVariables, buildOpenAICompatibleCurl, getByPath, injectImageIntoMessages, flattenStructuredJsonAnswer, blockedInfrastructureHost } from './utils/curlUtils';
+import { applyCurlVariables, buildOpenAICompatibleCurl, getByPath, injectImageIntoMessages, flattenStructuredJsonAnswer, blockedInfrastructureHost, imageMimeTypeFromPath } from './utils/curlUtils';
 import { getImageOptimizer } from './services/screen/ImageOptimizer';
 import curl2Json from "@bany/curl-to-json";
 import { CustomProvider, CurlProvider } from './services/CredentialsManager';
@@ -2028,17 +2029,16 @@ export class LLMHelper {
         return this.generateContent(contents, modelId);
       }
       case 'custom': {
-        if (!this.customProvider) {
-          throw new Error('No custom provider configured');
-        }
+        const provider = this.customProvider || this.activeCurlProvider;
+        if (!provider) throw new Error('No custom provider configured');
         return this.executeCustomProvider(
-          customProviderCurlCommand(this.customProvider),
+          customProviderCurlCommand(provider),
           `${systemPrompt}\n\n${userPrompt}`,
           systemPrompt,
           userPrompt,
           '',
           imagePath,
-          this.customProvider.responsePath,
+          provider.responsePath,
         );
       }
       default:
@@ -2052,6 +2052,12 @@ export class LLMHelper {
    */
   public getActiveCustomProvider(): CustomProvider | null {
     return this.customProvider;
+  }
+
+  /** Legacy cURL selection, exposed beside the current custom-provider slot so
+   * screen-understanding availability and dispatch see the same endpoint. */
+  public getActiveCurlProvider(): CurlProvider | null {
+    return this.activeCurlProvider;
   }
 
   /**
@@ -5847,6 +5853,10 @@ let isMultimodal = !!(imagePaths?.length);
       TEXT: fullPrompt,
       MODEL: this.activeCurlProvider.model || '',
       IMAGE_BASE64: base64Image,
+      IMAGE_MIME_TYPE: base64Image && imageTypePath ? imageMimeTypeFromPath(imageTypePath) : '',
+      IMAGE_DATA_URL: base64Image && imageTypePath
+        ? `data:${imageMimeTypeFromPath(imageTypePath)};base64,${base64Image}`
+        : '',
     };
 
     // 4. Inject Variables into URL, Headers, and Body
@@ -5858,7 +5868,7 @@ let isMultimodal = !!(imagePaths?.length);
 
     // 4a. Auto-upgrade last user message to multimodal content array when an image is present.
     //     imageTypePath — not imagePath — so the declared mime matches the bytes.
-    if (base64Image && imageTypePath) {
+    if (base64Image && imageTypePath && !customProviderUsesExplicitImagePlaceholder(curlCommand)) {
       data = injectImageIntoMessages(data, base64Image, imageTypePath);
     }
 
@@ -6079,6 +6089,10 @@ let isMultimodal = !!(imagePaths?.length);
       CONTEXT: context,                  // Raw Context
       MODEL: '',                          // Optional {{MODEL}} template variable
       IMAGE_BASE64: base64Image,         // Base64 encoded image string
+      IMAGE_MIME_TYPE: base64Image && imageTypePath ? imageMimeTypeFromPath(imageTypePath) : '',
+      IMAGE_DATA_URL: base64Image && imageTypePath
+        ? `data:${imageMimeTypeFromPath(imageTypePath)};base64,${base64Image}`
+        : '',
     };
 
     // 4. Inject Variables into URL, Headers, and Body
@@ -6093,7 +6107,7 @@ let isMultimodal = !!(imagePaths?.length);
     //     This is a no-op for non-OpenAI formats and for templates that already
     //     include a proper image_url part, so it is fully backward-compatible.
     //     imageTypePath — not imagePath — so the declared mime matches the bytes.
-    if (base64Image && imageTypePath) {
+    if (base64Image && imageTypePath && !customProviderUsesExplicitImagePlaceholder(curlCommand)) {
       body = injectImageIntoMessages(body, base64Image, imageTypePath);
     }
 
@@ -6924,6 +6938,26 @@ let isMultimodal = !!(imagePaths?.length);
       if (this.groqClient) {
         providers.push({ name: `Groq (${GROQ_VISION_MODEL})`, execute: () => this.streamWithGroqMultimodal(userContent, imagePaths!, openaiSystemPrompt, abortSignal) });
       }
+      // Legacy streaming callers used to omit the selected user cURL endpoint
+      // from their multimodal provider list entirely. That made a capable
+      // custom model look text-only even though the same endpoint worked for a
+      // typed request. Put the active endpoint first and keep the shared
+      // capability predicate as the guard against silently dropping pixels.
+      if (!this.isProviderDisabled('custom')) {
+        if (this.customProvider && customProviderSupportsVision(this.customProvider)) {
+          const custom = this.customProvider;
+          providers.unshift({
+            name: `Custom Provider (${custom.name})`,
+            execute: () => this.streamWithCustom(message, context, imagePaths, openaiSystemPrompt || UNIVERSAL_SYSTEM_PROMPT, abortSignal),
+          });
+        } else if (this.activeCurlProvider && customProviderSupportsVision(this.activeCurlProvider)) {
+          const curl = this.activeCurlProvider;
+          providers.unshift({
+            name: `cURL Provider (${curl.name})`,
+            execute: () => this.streamWithDirectCurl(curl, userContent, openaiSystemPrompt || UNIVERSAL_SYSTEM_PROMPT, imagePaths, abortSignal),
+          });
+        }
+      }
     } else {
       // TEXT-ONLY PROVIDER ORDER: [Natively] -> Codex CLI -> OpenAI -> Claude -> Gemini Flash-Lite -> Gemini Flash -> Gemini Pro -> Groq
       // Groq is demoted to LAST because the free Groq tier has a low TPM
@@ -7257,19 +7291,29 @@ let isMultimodal = !!(imagePaths?.length);
       }
     }
 
-    // Local providers (always available, including in local-only mode).
+    // Local/user endpoints (always available, including in local-only mode).
     const local: VisionStreamProvider[] = [];
-    // Custom provider: only include for vision when it can actually carry an
-    // image (explicit multimodal flag, an {{IMAGE_BASE64}} placeholder, or an
+    // Only include a custom endpoint for vision when it can actually carry an
+    // image (explicit multimodal flag, an image placeholder, or an
     // OpenAI-compatible messages body). Otherwise it would "succeed" while
     // silently dropping the screenshot — worse than skipping it.
+    //
+    // The legacy active cURL slot is included here too. It used to work for
+    // text and one-shot vision calls but was absent from the unified streaming
+    // chain, so Screenshot & Ask AI could skip the user's capable cURL model
+    // and eventually claim that no vision provider was configured.
     if (this.customProvider && customProviderSupportsVision(this.customProvider)) {
-      // Derive local-ness from an explicit flag or a loopback/private cURL host,
-      // so a local custom vision endpoint still works in local-only mode.
       const customIsLocal = customProviderIsLocal(this.customProvider);
       if (!localOnly || customIsLocal) {
         local.push({ id: 'custom', name: `Custom (${this.customProvider.name})`, isLocal: customIsLocal, priority: 100,
           open: (sig) => this.streamWithCustom(message, context, imagePaths, systemPrompt, sig) });
+      }
+    } else if (this.activeCurlProvider && customProviderSupportsVision(this.activeCurlProvider)) {
+      const curlIsLocal = customProviderIsLocal(this.activeCurlProvider);
+      if (!localOnly || curlIsLocal) {
+        const activeCurl = this.activeCurlProvider;
+        local.push({ id: 'custom_curl', name: `cURL (${activeCurl.name})`, isLocal: curlIsLocal, priority: 100,
+          open: (sig) => this.streamWithDirectCurl(activeCurl, userContent, systemPrompt, imagePaths, sig) });
       }
     }
     // Ollama: use the resolved vision-capable model (which may differ from the
@@ -7302,6 +7346,7 @@ let isMultimodal = !!(imagePaths?.length);
       const front: VisionStreamProvider[] = [];
       if (this.useOllama) { const o = local.find(p => p.id === 'ollama'); if (o) front.push(o); }
       if (this.customProvider) { const c = local.find(p => p.id === 'custom'); if (c) front.push(c); }
+      if (this.activeCurlProvider) { const c = local.find(p => p.id === 'custom_curl'); if (c) front.push(c); }
       if (this.isCodexCliModel(this.currentModelId)) { const cdx = cloud.find(p => p.id === 'codex-cli'); if (cdx) front.push(cdx); }
       // Same rule as Codex above: the model the user picked leads its own turn,
       // rather than being sorted behind whichever key happens to be fastest.
@@ -11024,18 +11069,44 @@ let isMultimodal = !!(imagePaths?.length);
     const curlConfig = curl2Json(provider.curlCommand);
     let base64Image = '';
     const imagePath = imagePaths[0];
+    let preparedImagePath: string | undefined;
     if (imagePath) {
+      preparedImagePath = imagePath;
       try {
-        base64Image = (await fs.promises.readFile(imagePath)).toString('base64');
+        // Direct Assist's legacy cURL lane used to bypass ImageOptimizer.
+        // Large screenshots then hit provider body limits, and any PNG/JPEG
+        // conversion elsewhere could leave the declared MIME inconsistent
+        // with the bytes. Keep it on the same provider-ready path as the two
+        // other custom cURL executors.
+        const optimized = await getImageOptimizer().optimize(imagePath, {
+          profile: this.imageProfileFor('balanced', userMessage.length),
+          provider: 'custom',
+          cacheKey: imagePath,
+        });
+        base64Image = await getImageOptimizer().getBase64(optimized);
+        preparedImagePath = optimized.path;
       } catch {
-        throw new DirectAssistError('INVALID_ATTACHMENT', 'The image attachment could not be read.');
+        try {
+          base64Image = (await fs.promises.readFile(imagePath)).toString('base64');
+          preparedImagePath = imagePath;
+        } catch {
+          throw new DirectAssistError('INVALID_ATTACHMENT', 'The image attachment could not be read.');
+        }
       }
     }
 
     const fullPrompt = systemPrompt ? `${systemPrompt}\n\n${userMessage}` : userMessage;
     const variables = {
-      TEXT: JSON.stringify(fullPrompt).slice(1, -1),
+      TEXT: fullPrompt,
+      PROMPT: fullPrompt,
+      SYSTEM_PROMPT: systemPrompt,
+      USER_MESSAGE: userMessage,
+      MODEL: provider.model || '',
       IMAGE_BASE64: base64Image,
+      IMAGE_MIME_TYPE: base64Image && preparedImagePath ? imageMimeTypeFromPath(preparedImagePath) : '',
+      IMAGE_DATA_URL: base64Image && preparedImagePath
+        ? `data:${imageMimeTypeFromPath(preparedImagePath)};base64,${base64Image}`
+        : '',
     };
     // applyCurlVariables, not three raw deepVariableReplacer calls. This
     // function arrived with the main merge still calling the older helper,
@@ -11046,7 +11117,9 @@ let isMultimodal = !!(imagePaths?.length);
     // characters from header values.
     const { url, headers, data: substituted } = applyCurlVariables(curlConfig, variables);
     let data = substituted;
-    if (base64Image && imagePath) data = injectImageIntoMessages(data, base64Image, imagePath);
+    if (base64Image && preparedImagePath && !customProviderUsesExplicitImagePlaceholder(provider.curlCommand)) {
+      data = injectImageIntoMessages(data, base64Image, preparedImagePath);
+    }
 
     // The metadata-host guard, NOT validateUrlForSsrf — the same policy the
     // other two custom-provider transports use.
@@ -11184,6 +11257,10 @@ let isMultimodal = !!(imagePaths?.length);
       CONTEXT: context || "",
       MODEL: selectedCustomProvider.model || '',
       IMAGE_BASE64: base64Image,
+      IMAGE_MIME_TYPE: base64Image && preparedImagePath ? imageMimeTypeFromPath(preparedImagePath) : '',
+      IMAGE_DATA_URL: base64Image && preparedImagePath
+        ? `data:${imageMimeTypeFromPath(preparedImagePath)};base64,${base64Image}`
+        : '',
     };
 
     // One helper for all three executors: the body keeps the raw values it
@@ -11195,7 +11272,7 @@ let isMultimodal = !!(imagePaths?.length);
     // Auto-upgrade last user message to multimodal content array when an image is present.
     // No-op for non-OpenAI formats and templates already containing a proper image_url part.
     // preparedImagePath — not imagePaths[0] — so the declared mime matches the bytes.
-    if (base64Image && preparedImagePath) {
+    if (base64Image && preparedImagePath && !customProviderUsesExplicitImagePlaceholder(curlCommand)) {
       body = injectImageIntoMessages(body, base64Image, preparedImagePath);
     }
 

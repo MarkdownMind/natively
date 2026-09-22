@@ -2,7 +2,7 @@
 //
 // Tests the pure local-provider vision-capability detection:
 //   • Ollama: authoritative /api/show capabilities + name-heuristic fallback
-//   • Custom cURL provider: explicit flag > {{IMAGE_BASE64}} > OpenAI messages body
+//   • Custom cURL provider: explicit flag > image placeholders > OpenAI messages body
 //
 // Loads compiled JS from dist-electron like the other __tests__.
 
@@ -86,6 +86,11 @@ describe('customProviderSupportsVision', () => {
     assert.equal(customProviderSupportsVision({ curlCommand: curl }), true);
   });
 
+  test('{{IMAGE_DATA_URL}} placeholder → true', () => {
+    const curl = `curl https://api.x -d '{"image_url":"{{IMAGE_DATA_URL}}"}'`;
+    assert.equal(customProviderSupportsVision({ curlCommand: curl }), true);
+  });
+
   test('OpenAI-compatible messages body → true (auto-inject path)', () => {
     const curl = `curl https://api.openai.com/v1/chat/completions -H 'Authorization: Bearer sk' -d '{"model":"gpt-4o","messages":[{"role":"user","content":"{{TEXT}}"}]}'`;
     assert.equal(customProviderSupportsVision({ curlCommand: curl }), true);
@@ -108,6 +113,11 @@ describe('customProviderSupportsVision', () => {
 
   test('messages with a user role → true', () => {
     const curl = `curl https://api.x -d '{"messages":[{"role":"system","content":"hi"},{"role":"user","content":"{{TEXT}}"}]}'`;
+    assert.equal(customProviderSupportsVision({ curlCommand: curl }), true);
+  });
+
+  test('escaped OpenAI JSON quotes still detect the multimodal messages path', () => {
+    const curl = String.raw`curl https://api.x -d '{\"messages\":[{\"role\":\"user\",\"content\":\"{{TEXT}}\"}]}'`;
     assert.equal(customProviderSupportsVision({ curlCommand: curl }), true);
   });
 });

@@ -5430,7 +5430,7 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
                                     <option value="off">{t('Never send screenshots (text only)')}</option>
                                 </select>
                                 <p className="text-[10px] aip-muted mt-1">
-                                    {t('Auto-detect enables vision when your cURL uses')} <code className="aip-code-inline">{"{{IMAGE_BASE64}}"}</code> {t('or an OpenAI-style')} <code className="aip-code-inline">messages</code> {t('body. Choose “Always” only if your endpoint accepts images another way; “Never” keeps this provider out of screenshot analysis.')}
+                                    {t('Auto-detect enables vision when your cURL uses')} <code className="aip-code-inline">{"{{IMAGE_BASE64}}"}</code> {t('or')} <code className="aip-code-inline">{"{{IMAGE_DATA_URL}}"}</code> {t('or an OpenAI-style')} <code className="aip-code-inline">messages</code> {t('body. Choose “Always” only if your endpoint accepts images another way; “Never” keeps this provider out of screenshot analysis.')}
                                 </p>
                             </div>
 
@@ -5452,6 +5452,14 @@ export const AIProvidersSettings: React.FC<AIProvidersSettingsProps> = ({
                                             <div className="flex items-center gap-2 text-xs">
                                                 <code className="aip-code-inline shrink-0">{"{{IMAGE_BASE64}}"}</code>
                                                 <span className="aip-muted">{t('Screenshot data (if available)')}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2 text-xs">
+                                                <code className="aip-code-inline shrink-0">{"{{IMAGE_DATA_URL}}"}</code>
+                                                <span className="aip-muted">{t('Screenshot as a MIME-correct data URL')}</span>
+                                            </div>
+                                            <div className="flex items-center gap-2 text-xs">
+                                                <code className="aip-code-inline shrink-0">{"{{IMAGE_MIME_TYPE}}"}</code>
+                                                <span className="aip-muted">{t('Screenshot MIME type for custom image fields')}</span>
                                             </div>
                                             <div className="flex items-center gap-2 text-xs">
                                                 <code className="aip-code-inline shrink-0">{"{{MODEL}}"}</code>

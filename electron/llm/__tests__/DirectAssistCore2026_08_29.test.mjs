@@ -960,6 +960,23 @@ test('custom vision injection follows optimized MIME and restores raw fallback M
   assert.doesNotMatch(custom, /injectImageIntoMessages\(body, base64Image, imagePaths\[0\]\)/);
 });
 
+test('Direct Assist cURL carries optimized images and custom image placeholders', () => {
+  const source = fs.readFileSync(path.resolve(root, 'electron/LLMHelper.ts'), 'utf8');
+  const start = source.indexOf('private async *streamWithDirectCurl(');
+  const end = source.indexOf('\n  // --- CUSTOM PROVIDER STREAMING ---', start);
+  const curl = source.slice(start, end);
+
+  assert.ok(start >= 0 && end > start);
+  assert.match(curl, /let preparedImagePath: string \| undefined/);
+  assert.match(curl, /getImageOptimizer\(\)\.optimize\(imagePath/);
+  assert.match(curl, /preparedImagePath = optimized\.path/);
+  assert.match(curl, /IMAGE_DATA_URL:/);
+  assert.match(curl, /IMAGE_MIME_TYPE:/);
+  assert.match(curl, /customProviderUsesExplicitImagePlaceholder\(provider\.curlCommand\)/);
+  assert.match(curl, /injectImageIntoMessages\(data, base64Image, preparedImagePath\)/);
+  assert.doesNotMatch(curl, /toString\('base64'\)[\s\S]*?injectImageIntoMessages\(data, base64Image, imagePath\)/);
+});
+
 test('the Direct natively dispatch gets its own connect budget, not the live path\'s hand-off deadline', () => {
   const helperSource = fs.readFileSync(path.resolve(root, 'electron/LLMHelper.ts'), 'utf8');
 

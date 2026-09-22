@@ -71,8 +71,9 @@ export interface CustomProvider {
     hasApiKey?: boolean;
     /**
      * Whether this provider can accept screenshots. When undefined, vision
-     * support is auto-detected from the cURL template (an `{{IMAGE_BASE64}}`
-     * placeholder, or an OpenAI-compatible `messages` body). Set explicitly to
+     * support is auto-detected from the cURL template (an `{{IMAGE_BASE64}}` or
+     * `{{IMAGE_DATA_URL}}` placeholder, or an OpenAI-compatible `messages`
+     * body). Set explicitly to
      * override the guess. See customProviderSupportsVision().
      */
     multimodal?: boolean;
@@ -101,6 +102,8 @@ export interface CurlProvider {
     model?: string;
     apiKey?: string;
     hasApiKey?: boolean;
+    /** Explicit screenshot capability override; absent means auto-detect. */
+    multimodal?: boolean;
 }
 
 /**

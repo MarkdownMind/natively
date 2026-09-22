@@ -1,7 +1,9 @@
 // electron/llm/activeCustomProvider.ts
 //
-// The ACTIVE custom provider — the one the user actually selected — read from
+// The ACTIVE user endpoint — the one the user actually selected — read from
 // the live LLMHelper instance that main.ts publishes on a global accessor.
+// This includes both the current Custom Provider store and the legacy cURL
+// store. They use the same image-capability and locality contract at dispatch.
 //
 // WHY THIS IS ITS OWN MODULE (2026-09-04)
 // Three places need this answer and they must give the same one:
@@ -20,8 +22,8 @@
 // request died with "No vision-capable provider configured".
 //
 // Active-only is the correct rule for VISION specifically. The vision chain
-// (streamVisionWithFallback) and runVisionRequest both resolve the provider from
-// `this.customProvider`, so a saved-but-unselected provider genuinely cannot
+// and runVisionRequest resolve the provider from the live helper (including its
+// legacy active cURL slot), so a saved-but-unselected provider genuinely cannot
 // serve an image request — counting it would be a promise nothing can keep.
 // (The TEXT fallback in _streamChatInner deliberately DOES reach saved-but-
 // unselected providers; that rung is explicitly text-only, and this module is
@@ -59,8 +61,15 @@ export function readActiveCustomProvider(): ActiveCustomProvider | null {
     const g = globalThis as any;
     if (typeof g.__nativelyGetLLMHelper !== 'function') return null;
     const helper = g.__nativelyGetLLMHelper();
-    if (!helper || typeof helper.getActiveCustomProvider !== 'function') return null;
-    return helper.getActiveCustomProvider() || null;
+    if (!helper) return null;
+    if (typeof helper.getActiveCustomProvider === 'function') {
+      const custom = helper.getActiveCustomProvider();
+      if (custom) return custom;
+    }
+    if (typeof helper.getActiveCurlProvider === 'function') {
+      return helper.getActiveCurlProvider() || null;
+    }
+    return null;
   } catch {
     return null;
   }

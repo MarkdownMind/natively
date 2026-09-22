@@ -110,7 +110,7 @@ export function deepVariableReplacer(
             // Global replace of {{KEY}}, tolerating inner whitespace.
             //
             // `\s*` is load-bearing, not cosmetic: customProviderSupportsVision
-            // accepts `{{ IMAGE_BASE64 }}` as proof the template can carry an
+            // accepts `{{ IMAGE_BASE64 }}` / `{{ IMAGE_DATA_URL }}` as proof the template can carry an
             // image, so a template written that way was admitted to the vision
             // chain and then shipped the LITERAL string `{{ IMAGE_BASE64 }}` as
             // its image field. Detection and substitution have to agree on the
